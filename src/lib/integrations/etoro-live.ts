@@ -451,7 +451,7 @@ function getEtoroHistoryUnits(row: EtoroApiRow, phase: EtoroActivityPhase) {
 function deriveEtoroHistoryGrossAmount(row: EtoroApiRow, phase: EtoroActivityPhase, price: number, leverage: number) {
   const amount = getNumberValue(row, phase === "open"
     ? ["amount", "Amount", "openAmount", "OpenAmount", "investedAmount", "InvestedAmount", "requestedAmount", "RequestedAmount"]
-    : ["closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "amount", "Amount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
+    : ["closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
 
   if (amount !== null) {
     return Math.abs(amount)
@@ -520,12 +520,12 @@ function createEtoroActivityEvent(
     }
   }
 
-  // For grossAmount: eToro accounts are in USD. The "amount" field (if present) IS the USD value.
-  // If not present, derive from units * price, but only if price is in USD.
-  // For GBX instruments, units * price gives pence-denominated value which is NOT what we want.
+  // For grossAmount: eToro accounts are in USD. The "amount" field (if present) IS the USD invested value.
+  // IMPORTANT: for close phase, do NOT fall back to "amount"/"Amount" — that's the OPEN invested amount.
+  // Only use close-specific fields (closeAmount, closedAmount, proceeds, realizedAmount).
   const explicitAmount = getNumberValue(normalizedRow, phase === "open"
     ? ["amount", "Amount", "openAmount", "OpenAmount", "investedAmount", "InvestedAmount", "requestedAmount", "RequestedAmount"]
-    : ["closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "amount", "Amount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
+    : ["closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
 
   let grossAmount: number | null
   if (explicitAmount !== null) {
@@ -560,17 +560,12 @@ function createEtoroActivityEvent(
   const companyName = metadata?.companyName ?? ticker
   const positionId = getNumberValue(normalizedRow, ["positionId", "PositionId"]) ?? instrumentId
 
-  // grossAmount is in the instrument's native currency (since we derived from price * shares)
-  // UNLESS we got it from explicitAmount (which is in USD for eToro accounts)
-  const grossAmountInNative = explicitAmount !== null
-    ? (nativeCurrency === "USD" ? grossAmount : grossAmount) // explicitAmount is in USD regardless
-    : grossAmount // derived from native price * shares
-
-  // For GBP-denominated conversion: if explicitAmount was USD, convert to GBP
-  // If derived from native currency, convert from native to GBP
-  const grossAmountGbp = explicitAmount !== null
-    ? grossAmount * USD_TO_GBP_FALLBACK_RATE // eToro amounts are always USD
-    : convertNativeToGbp(grossAmount, nativeCurrency)
+  // For consistent P&L calculations, ALWAYS derive grossAmountGbp from shares * price in native currency.
+  // This ensures buy and sell events for the same stock are comparable.
+  // The explicit "amount" from eToro (in USD) uses a static FX rate that creates inconsistencies
+  // when compared to derived close amounts.
+  const nativeGrossAmount = (Math.abs(shares) * price) / Math.max(leverage, 1)
+  const grossAmountGbp = convertNativeToGbp(nativeGrossAmount, nativeCurrency)
 
   return {
     id: `etoro:${positionId}:${phase}:${timestamp}:${price}`,
@@ -583,7 +578,7 @@ function createEtoroActivityEvent(
     shares,
     price,
     nativeCurrency,
-    grossAmount: explicitAmount !== null ? grossAmount : grossAmountInNative,
+    grossAmount: nativeGrossAmount,
     grossAmountGbp,
     orderType: phase === "open" ? "Open" : "Close",
   }

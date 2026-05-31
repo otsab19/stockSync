@@ -163,7 +163,7 @@ function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | 
   }
 
   const resolvedCompanyName = companyName ?? ticker
-  const cleanTicker = ticker.replace(/_US_EQ$|_EQ$|_GB_EQ$|p_EQ$/i, "")
+  const cleanTicker = ticker.replace(/_US_EQ$|_EQ$|_GB_EQ$|p_EQ$/i, "").replace(/\.(L|LSE|LON)$/i, "")
 
   return normalizeImportedHolding({
     broker: "t212",
@@ -342,7 +342,7 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
     timestamp,
     broker: "t212",
     brokerLabel: "Trading 212",
-    ticker: ticker.replace(/_US_EQ$|_EQ$|_GB_EQ$|p_EQ$/i, ""),
+    ticker: ticker.replace(/_US_EQ$|_EQ$|_GB_EQ$|p_EQ$/i, "").replace(/\.(L|LSE|LON)$/i, ""),
     companyName: companyName ?? ticker,
     type: normalizeTrading212ActivityType(row, rawQuantity ?? quantity),
     shares: quantity,
