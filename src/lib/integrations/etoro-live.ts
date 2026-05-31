@@ -11,6 +11,39 @@ const DEFAULT_ETORO_DEMO_PNL_PATH = "/api/v1/trading/info/demo/pnl"
 const DEFAULT_ETORO_TRADE_HISTORY_PATH = "/api/v1/trading/info/trade/history"
 const USD_TO_GBP_FALLBACK_RATE = 0.79
 
+// Known eToro ticker renames / aliases that differ from standard market tickers
+const ETORO_TICKER_ALIASES: Record<string, string> = {
+  GIG: "BBAI", // BigBear.ai was renamed from GigCapital4
+}
+
+/**
+ * Clean an eToro ticker:
+ * - Strip London Stock Exchange suffixes (.L, .l, .LSE, .LON)
+ * - Strip trailing lowercase "l" that eToro appends to LSE tickers (e.g. "RRl" → "RR")
+ * - Apply known ticker renames (e.g. GIG → BBAI)
+ */
+function cleanEtoroTicker(rawTicker: string, isLseListed: boolean): string {
+  // Strip exchange suffixes like .L, .l, .LSE, .LON
+  let cleaned = rawTicker.replace(/\.(L|l|LSE|LON)$/i, "")
+
+  // Strip trailing lowercase "l" for LSE-listed instruments (e.g. "RRl" → "RR", "BPl" → "BP")
+  if (isLseListed && cleaned.length > 1 && cleaned.endsWith("l") && cleaned[cleaned.length - 2] !== cleaned[cleaned.length - 2]?.toLowerCase()) {
+    cleaned = cleaned.slice(0, -1)
+  }
+  // More general: if it ends with lowercase "l" and the rest is uppercase, strip it
+  if (cleaned.length > 1 && cleaned.endsWith("l") && /^[A-Z]+$/.test(cleaned.slice(0, -1))) {
+    cleaned = cleaned.slice(0, -1)
+  }
+
+  // Apply known ticker aliases
+  const upper = cleaned.toUpperCase()
+  if (ETORO_TICKER_ALIASES[upper]) {
+    return ETORO_TICKER_ALIASES[upper]
+  }
+
+  return cleaned
+}
+
 type EtoroApiRow = Record<string, unknown>
 type EtoroInstrumentMetadata = {
   instrumentId: number
@@ -521,7 +554,9 @@ function createEtoroActivityEvent(
   }
 
   const nativeCurrency = metadata?.currency ?? rowCurrencyInfo.currency ?? "USD"
-  const ticker = metadata?.ticker ?? metadata?.companyName ?? `ET${instrumentId}`
+  const isLse = metadata?.priceScale === "gbx" || nativeCurrency === "GBP" || priceScale === "gbx"
+  const rawTicker = metadata?.ticker ?? metadata?.companyName ?? `ET${instrumentId}`
+  const ticker = cleanEtoroTicker(rawTicker, isLse)
   const companyName = metadata?.companyName ?? ticker
   const positionId = getNumberValue(normalizedRow, ["positionId", "PositionId"]) ?? instrumentId
 
@@ -905,11 +940,13 @@ function mapEtoroRowToPosition(
   }
 
   const resolvedCompanyName = companyName ?? ticker
+  const isLse = metadata?.priceScale === "gbx" || metadata?.currency === "GBP" || priceScale === "gbx"
+  const cleanedTicker = cleanEtoroTicker(ticker, isLse)
 
   return normalizeImportedHolding({
     broker: "etoro",
     brokerLabel: "eToro",
-    ticker,
+    ticker: cleanedTicker,
     companyName: resolvedCompanyName,
     shares: resolvedShares,
     avgPrice: resolvedAveragePrice,
