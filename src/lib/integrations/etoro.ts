@@ -22,9 +22,24 @@ export const etoroProvider: BrokerProvider = {
       return { positions, activity: [] }
     }
 
-    return {
-      positions,
-      activity: await fetchEtoroActivityFromApi(credentials),
+    try {
+      // Small delay to avoid rate limiting after positions fetch
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      return {
+        positions,
+        activity: await fetchEtoroActivityFromApi(credentials),
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests")
+
+      return {
+        positions,
+        activity: [],
+        message: isRateLimit
+          ? "eToro positions refreshed, but trade history hit the broker rate limit. Try refreshing history again in a minute."
+          : `eToro positions refreshed, but trade history failed: ${message.slice(0, 150)}`,
+      }
     }
   },
   async importFromCsv(csvText: string) {

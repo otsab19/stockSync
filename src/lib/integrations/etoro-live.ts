@@ -465,8 +465,27 @@ function createEtoroActivityEvent(
   const leverage = Math.max(getNumberValue(normalizedRow, ["leverage", "Leverage"]) ?? 1, 1)
   const isBuy = getBooleanValue(normalizedRow, ["isBuy", "IsBuy"])
 
-  // Get shares — prefer explicit units fields
-  const shares = price !== null && price > 0 ? getEtoroHistoryShares(normalizedRow, phase, price, leverage) : null
+  // Get shares — prefer explicit units fields, fall back to deriving from netProfit
+  let shares = price !== null && price > 0 ? getEtoroHistoryShares(normalizedRow, phase, price, leverage) : null
+
+  // Fallback: derive shares from netProfit and open/close rates if no explicit units/amount
+  if (shares === null && phase === "close") {
+    const netProfit = getNumberValue(normalizedRow, ["netProfit", "NetProfit", "profit", "Profit", "pnl", "Pnl", "PnL"])
+    const openRate = getNumberValue(normalizedRow, ["openRate", "OpenRate"])
+    const closeRate = getNumberValue(normalizedRow, ["closeRate", "CloseRate"])
+    if (netProfit !== null && openRate !== null && closeRate !== null && closeRate !== openRate) {
+      shares = Math.abs(netProfit * leverage / (closeRate - openRate))
+    }
+  }
+  // For open phase: if we can derive from netProfit on the close side, use those same units
+  if (shares === null && phase === "open") {
+    const netProfit = getNumberValue(normalizedRow, ["netProfit", "NetProfit", "profit", "Profit", "pnl", "Pnl", "PnL"])
+    const openRate = getNumberValue(normalizedRow, ["openRate", "OpenRate"])
+    const closeRate = getNumberValue(normalizedRow, ["closeRate", "CloseRate"])
+    if (netProfit !== null && openRate !== null && closeRate !== null && closeRate !== openRate) {
+      shares = Math.abs(netProfit * leverage / (closeRate - openRate))
+    }
+  }
 
   // For grossAmount: eToro accounts are in USD. The "amount" field (if present) IS the USD value.
   // If not present, derive from units * price, but only if price is in USD.
@@ -481,8 +500,7 @@ function createEtoroActivityEvent(
     grossAmount = Math.abs(explicitAmount)
   } else if (shares !== null && price !== null && price > 0) {
     // Derive: shares * price gives native currency value
-    const rawGross = (Math.abs(shares) * price) / Math.max(leverage, 1)
-    grossAmount = rawGross
+    grossAmount = (Math.abs(shares) * price) / Math.max(leverage, 1)
   } else {
     grossAmount = null
   }
