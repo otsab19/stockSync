@@ -5,6 +5,12 @@ const withPWA = nextPwa({
   disable: process.env.NODE_ENV === "development",
   register: true,
   skipWaiting: true,
+  sw: "sw.js",
+  publicExcludes: ["!sw.js"],
+  buildExcludes: [/middleware-manifest\.json$/],
+  fallbacks: {
+    document: "/dashboard",
+  },
 })
 
 /** @type {import('next').NextConfig} */

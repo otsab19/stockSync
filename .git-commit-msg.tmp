@@ -1,0 +1,16 @@
+feat: implement PWA push notifications end-to-end
+
+- Service worker: add install/activate with cache, proper push handler
+  with JSON payload parsing, tag-based dedup, and smart notificationclick
+- Push subscription hook (use-push.ts): handles subscribe/unsubscribe
+  lifecycle with VAPID key, persists to server
+- Push subscribe API route (POST/DELETE /api/push/subscribe): saves/removes
+  subscriptions in Supabase push_subscriptions table
+- Alert job (supabase-alert-job.ts): fully implemented — fetches live
+  positions for all users, compares P&L against ±£25 threshold buckets,
+  sends web-push notifications only on new threshold crossings, cleans
+  stale 410 subscriptions
+- Notification toggle UI component on settings page
+- next.config.mjs: configure @ducanh2912/next-pwa to use custom sw.js
+  with offline fallback to /dashboard
+

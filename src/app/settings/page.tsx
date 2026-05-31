@@ -2,6 +2,7 @@ import Link from "next/link"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { NotificationToggle } from "@/components/notifications/notification-toggle"
 
 const selectedBackend = process.env.NEXT_PUBLIC_DATA_BACKEND === "browser" ? "Browser local" : "Supabase"
 
@@ -102,6 +103,17 @@ export default function SettingsPage() {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="border-white/10">
+          <CardHeader>
+            <CardTitle>Push notifications</CardTitle>
+            <CardDescription>
+              Get alerted when any position crosses ±£25 P&L. Requires Supabase backend and VAPID keys.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <NotificationToggle />
+          </CardContent>
+        </Card>
         {settingsItems.map((item) => (
           <Card key={item.name} className="border-white/10">
             <CardHeader>
