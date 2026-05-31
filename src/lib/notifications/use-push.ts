@@ -20,12 +20,19 @@ export function usePushNotifications() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
       setState("unsupported")
       return
     }
 
     const checkPermission = async () => {
+      // Register SW if not already
+      try {
+        await navigator.serviceWorker.register("/sw.js")
+      } catch {
+        // may already be registered
+      }
+
       const permission = Notification.permission
       if (permission === "denied") {
         setState("denied")
@@ -49,6 +56,20 @@ export function usePushNotifications() {
 
     try {
       setState("loading")
+
+      // Request permission (triggers browser prompt)
+      const permission = await Notification.requestPermission()
+      if (permission === "denied") {
+        setState("denied")
+        setError("Notification permission denied.")
+        return false
+      }
+      if (permission !== "granted") {
+        setState("prompt")
+        setError("Notification permission not granted.")
+        return false
+      }
+
       const registration = await navigator.serviceWorker.ready
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
