@@ -41,15 +41,6 @@ const defaultHistoryFilters: HistoryFilterState = {
 }
 
 
-const backendLabels = {
-  browser: "Browser backend",
-  supabase: "Supabase backend",
-} as const
-
-const sourceLabels = {
-  browser_local: "IndexedDB source",
-  server: "Server route source",
-} as const
 
 const brokerColours = ["#5eead4", "#60a5fa", "#f59e0b", "#a78bfa", "#f472b6", "#22d3ee"]
 
@@ -341,40 +332,18 @@ export default function DashboardHistoryPage() {
 
   const avgTradeSizeGbp = displayActivity.length === 0 ? 0 : displayActivity.reduce((sum, e) => sum + e.grossAmountGbp, 0) / displayActivity.length
 
-  const backendLabel = portfolioResponse ? backendLabels[portfolioResponse.backend] : null
-  const sourceLabel = portfolioResponse ? sourceLabels[portfolioResponse.source] : null
   const hasAnyActivity = rawActivity.length > 0
   const hasFilteredResults = displayActivity.length > 0
 
   return (
     <PageShell>
-      <PageHeader
-        eyebrow="History"
-        title="Trade history & analytics"
-        description="Deep-dive into your trading activity: P&L analysis, top performers, flow charts, and the full event log."
-        actions={(
-          <>
-            <Button variant="outline" onClick={() => void fetchPortfolio(true)} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03] px-3">
-              <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
-              {isRefreshing ? "Refreshing..." : "Refresh history"}
-            </Button>
-            <Link
-              href="/dashboard"
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/14"
-            >
-              Overview dashboard
-              <ArrowUpRight className="size-4" />
-            </Link>
-          </>
-        )}
-        badges={(
-          <>
-            <Badge variant="outline">{rawActivity.length} trades loaded</Badge>
-            {backendLabel ? <Badge variant="outline">{backendLabel}</Badge> : null}
-            {sourceLabel ? <Badge variant="outline">{sourceLabel}</Badge> : null}
-          </>
-        )}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
+        <Button variant="outline" size="sm" onClick={() => void fetchPortfolio(true)} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+          <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
+          {isRefreshing ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
 
       {/* KPI Strip */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -724,90 +693,92 @@ export default function DashboardHistoryPage() {
           {/* Trade table or By-ticker summary */}
           {viewMode === "trades" ? (
             <Card className="border-white/10">
-              <CardHeader>
-                <CardTitle>Transactions table</CardTitle>
-                <CardDescription>{displayActivity.length} visible trade{displayActivity.length === 1 ? "" : "s"} in the current filter set.</CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Transactions ({displayActivity.length})</CardTitle>
               </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Broker</TableHead>
-                      <TableHead>Ticker</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Shares</TableHead>
-                      <TableHead className="text-right">Price</TableHead>
-                      <TableHead className="text-right">Gross (GBP)</TableHead>
-                      <TableHead>Order</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {displayActivity.map((event) => (
-                      <TableRow key={event.id}>
-                        <TableCell>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-xs">{formatLongDateTime(event.timestamp)}</span>
-                            <span className="text-xs text-muted-foreground">{event.companyName}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell><Badge variant="outline">{event.brokerLabel}</Badge></TableCell>
-                        <TableCell className="font-medium">{event.ticker}</TableCell>
-                        <TableCell>
-                          <Badge variant={event.type === "buy" ? "secondary" : "outline"}>{event.type === "buy" ? "Buy" : "Sell"}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatTradeShares(event.shares)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatTradePrice(event.price, event.nativeCurrency)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
-                        <TableCell>{event.orderType ?? "Market"}</TableCell>
+              <CardContent className="p-0">
+                <div className="max-h-[65vh] overflow-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-card">
+                      <TableRow>
+                        <TableHead className="min-w-[120px]">Date</TableHead>
+                        <TableHead className="min-w-[70px]">Broker</TableHead>
+                        <TableHead className="min-w-[80px]">Ticker</TableHead>
+                        <TableHead className="min-w-[55px]">Type</TableHead>
+                        <TableHead className="min-w-[65px] text-right">Shares</TableHead>
+                        <TableHead className="min-w-[80px] text-right">Price</TableHead>
+                        <TableHead className="min-w-[90px] text-right">Gross (GBP)</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {displayActivity.map((event) => (
+                        <TableRow key={event.id}>
+                          <TableCell>
+                            <span className="text-xs">{formatLongDateTime(event.timestamp)}</span>
+                          </TableCell>
+                          <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
+                          <TableCell>
+                            <div>
+                              <span className="font-medium text-xs">{event.ticker}</span>
+                              <span className="ml-1 text-[0.6rem] text-muted-foreground">{event.companyName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`text-xs font-medium ${event.type === "buy" ? "text-emerald-400" : "text-red-400"}`}>{event.type === "buy" ? "Buy" : "Sell"}</span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(event.shares)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(event.price, event.nativeCurrency)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs font-medium">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           ) : (
             <Card className="border-white/10">
-              <CardHeader>
-                <CardTitle>Per-ticker summary</CardTitle>
-                <CardDescription>Consolidated P&L and trade count per stock across the current filter.</CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Per-ticker summary ({tickerSummaries.length})</CardTitle>
               </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Ticker</TableHead>
-                      <TableHead>Broker</TableHead>
-                      <TableHead className="text-right">Trades</TableHead>
-                      <TableHead className="text-right">Buys</TableHead>
-                      <TableHead className="text-right">Sells</TableHead>
-                      <TableHead className="text-right">Total bought</TableHead>
-                      <TableHead className="text-right">Total sold</TableHead>
-                      <TableHead className="text-right">Net P&L</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {[...tickerSummaries].sort((a, b) => b.totalBoughtGbp - a.totalBoughtGbp).map((s) => (
-                      <TableRow key={`${s.ticker}:${s.broker}`}>
-                        <TableCell>
-                          <div>
-                            <p className="font-semibold text-sm">{s.ticker}</p>
-                            <p className="text-xs text-muted-foreground">{s.companyName}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell><Badge variant="outline">{s.brokerLabel}</Badge></TableCell>
-                        <TableCell className="text-right tabular-nums">{s.tradeCount}</TableCell>
-                        <TableCell className="text-right tabular-nums">{s.buyCount}</TableCell>
-                        <TableCell className="text-right tabular-nums">{s.sellCount}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(s.totalBoughtGbp, "GBP")}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(s.totalSoldGbp, "GBP")}</TableCell>
-                        <TableCell className={`text-right tabular-nums font-semibold ${s.netPLGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          {formatSignedMoney(s.netPLGbp)}
-                        </TableCell>
+              <CardContent className="p-0">
+                <div className="max-h-[65vh] overflow-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-card">
+                      <TableRow>
+                        <TableHead className="min-w-[100px]">Ticker</TableHead>
+                        <TableHead className="min-w-[70px]">Broker</TableHead>
+                        <TableHead className="min-w-[55px] text-right">Trades</TableHead>
+                        <TableHead className="min-w-[50px] text-right">Buys</TableHead>
+                        <TableHead className="min-w-[50px] text-right">Sells</TableHead>
+                        <TableHead className="min-w-[90px] text-right">Bought</TableHead>
+                        <TableHead className="min-w-[90px] text-right">Sold</TableHead>
+                        <TableHead className="min-w-[80px] text-right">Net P&L</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {[...tickerSummaries].sort((a, b) => b.totalBoughtGbp - a.totalBoughtGbp).map((s) => (
+                        <TableRow key={`${s.ticker}:${s.broker}`}>
+                          <TableCell>
+                            <div>
+                              <span className="font-medium text-xs">{s.ticker}</span>
+                              <span className="ml-1 text-[0.6rem] text-muted-foreground">{s.companyName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell><span className="text-xs text-muted-foreground">{s.brokerLabel}</span></TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{s.tradeCount}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{s.buyCount}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{s.sellCount}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatMoney(s.totalBoughtGbp, "GBP")}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatMoney(s.totalSoldGbp, "GBP")}</TableCell>
+                          <TableCell className={`text-right tabular-nums text-xs font-semibold ${s.netPLGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {formatSignedMoney(s.netPLGbp)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           )}
