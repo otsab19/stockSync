@@ -13,7 +13,7 @@ import {
   syncBrokerPortfolioFromBrowserApiKey,
 } from "@/lib/portfolio/browser-indexeddb"
 
-const isBrowserBackend = process.env.NEXT_PUBLIC_DATA_BACKEND === "browser"
+const isSupabaseBackend = process.env.NEXT_PUBLIC_DATA_BACKEND !== "browser"
 
 type SyncState = { kind: "idle" } | { kind: "success"; message: string } | { kind: "error"; message: string }
 
@@ -36,33 +36,38 @@ export function Trading212ApiSyncCard() {
 
     async function loadConnection() {
       try {
+        // Check browser-stored credentials
         const connection = await getBrowserBrokerConnection("t212")
+        if (!isMounted) return
 
-        if (!isMounted) {
+        if (connection?.apiKey && connection?.apiSecret) {
+          setHasSavedCredentials(true)
+          setSavedCredentialsUpdatedAt(connection.updatedAt ?? null)
           return
         }
 
-        setHasSavedCredentials(Boolean(connection?.apiKey && connection?.apiSecret))
-        setSavedCredentialsUpdatedAt(connection?.updatedAt ?? null)
+        // If supabase mode, also check server-stored credentials
+        if (isSupabaseBackend) {
+          const res = await fetch("/api/credentials")
+          if (!isMounted) return
+          const data = await res.json()
+          if (data?.credentials?.t212?.hasKey) {
+            setHasSavedCredentials(true)
+            setSavedCredentialsUpdatedAt(null)
+          }
+        }
       } catch (error) {
-        if (!isMounted) {
-          return
-        }
-
+        if (!isMounted) return
         setSyncState({
           kind: "error",
-          message: error instanceof Error ? error.message : "Failed to load the locally stored Trading 212 API credentials.",
+          message: error instanceof Error ? error.message : "Failed to load Trading 212 credentials.",
         })
       }
     }
 
-    if (isBrowserBackend) {
-      void loadConnection()
-    }
+    void loadConnection()
 
-    return () => {
-      isMounted = false
-    }
+    return () => { isMounted = false }
   }, [])
 
   async function handleSync() {
@@ -83,7 +88,7 @@ export function Trading212ApiSyncCard() {
       }
 
       if (!credentialsToUse.apiKey || !credentialsToUse.apiSecret) {
-        setSyncState({ kind: "error", message: "Enter both the Trading 212 API key and API secret, or use credentials already stored in this browser." })
+        setSyncState({ kind: "error", message: "Enter both the Trading 212 API key and API secret, or use credentials already stored." })
         return
       }
 
@@ -91,6 +96,14 @@ export function Trading212ApiSyncCard() {
 
       if (rememberKey) {
         await saveBrowserBrokerConnection("t212", credentialsToUse)
+        // Also save to Supabase if in supabase mode (for cron/push)
+        if (isSupabaseBackend) {
+          await fetch("/api/credentials", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ broker: "t212", apiKey: credentialsToUse.apiKey, apiSecret: credentialsToUse.apiSecret }),
+          }).catch(() => {}) // non-critical
+        }
         setHasSavedCredentials(true)
         setSavedCredentialsUpdatedAt(new Date().toISOString())
       }
@@ -102,7 +115,7 @@ export function Trading212ApiSyncCard() {
         message:
           importedPositions.length === 0
             ? "Trading 212 API sync succeeded, but there are no open holdings right now."
-            : `Fetched ${importedPositions.length} Trading 212 holding${importedPositions.length === 1 ? "" : "s"} from the API and replaced only the Trading 212 slice of the browser portfolio.`,
+            : `Fetched ${importedPositions.length} Trading 212 holding${importedPositions.length === 1 ? "" : "s"} from the API.`,
       })
     } catch (error) {
       setSyncState({
@@ -118,15 +131,22 @@ export function Trading212ApiSyncCard() {
     try {
       setIsSyncing(true)
       await removeBrowserBrokerConnection("t212")
+      if (isSupabaseBackend) {
+        await fetch("/api/credentials", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ broker: "t212" }),
+        }).catch(() => {})
+      }
       setHasSavedCredentials(false)
       setSavedCredentialsUpdatedAt(null)
       setApiKey("")
       setApiSecret("")
-      setSyncState({ kind: "success", message: "The locally stored Trading 212 API key and secret were removed from this browser." })
+      setSyncState({ kind: "success", message: "Trading 212 API credentials removed." })
     } catch (error) {
       setSyncState({
         kind: "error",
-        message: error instanceof Error ? error.message : "Failed to remove the stored Trading 212 API credentials.",
+        message: error instanceof Error ? error.message : "Failed to remove Trading 212 credentials.",
       })
     } finally {
       setIsSyncing(false)
@@ -139,12 +159,12 @@ export function Trading212ApiSyncCard() {
       await resetBrokerPortfolioInIndexedDb("t212")
       setSyncState({
         kind: "success",
-        message: "Trading 212 holdings were removed from browser storage. Saved API credentials stay in this browser unless you remove them separately.",
+        message: "Trading 212 holdings removed from browser storage. Saved API credentials remain unless you remove them separately.",
       })
     } catch (error) {
       setSyncState({
         kind: "error",
-        message: error instanceof Error ? error.message : "Failed to remove Trading 212 holdings from browser storage.",
+        message: error instanceof Error ? error.message : "Failed to remove Trading 212 holdings.",
       })
     } finally {
       setIsSyncing(false)
@@ -156,86 +176,76 @@ export function Trading212ApiSyncCard() {
       <CardHeader>
         <CardTitle>Trading 212 live sync</CardTitle>
         <CardDescription>
-          Connect Trading 212 and load current holdings into this browser with the fastest available flow.
+          Connect Trading 212 and load current holdings. {isSupabaseBackend ? "Keys are also saved server-side for background alerts." : "Keys are stored only in this browser."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm text-muted-foreground">
         <div className="space-y-2">
           <p>Trading 212 requires both the API key and API secret.</p>
-          <p>If you choose to remember them, the key pair is stored only in this browser so manual dashboard refreshes can reload holdings while the app is open.</p>
         </div>
 
-        {!isBrowserBackend ? (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-3">
-            Switch `NEXT_PUBLIC_DATA_BACKEND` to `browser` to use the local Trading 212 connection flow.
-          </div>
-        ) : (
-          <>
-            <label className="block space-y-2">
-              <span className="font-medium text-foreground">Trading 212 API key</span>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(event) => {
-                  setApiKey(event.target.value)
-                  setSyncState({ kind: "idle" })
-                }}
-                placeholder={hasSavedCredentials ? "Leave blank to use the saved key in this browser" : "Paste your Trading 212 API key"}
-                autoComplete="off"
-                spellCheck={false}
-                className="block w-full rounded-2xl border border-white/10 bg-background/45 px-3 py-3"
-              />
-            </label>
+        <label className="block space-y-2">
+          <span className="font-medium text-foreground">Trading 212 API key</span>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(event) => {
+              setApiKey(event.target.value)
+              setSyncState({ kind: "idle" })
+            }}
+            placeholder={hasSavedCredentials ? "Leave blank to use saved key" : "Paste your Trading 212 API key"}
+            autoComplete="off"
+            spellCheck={false}
+            className="block w-full rounded-2xl border border-white/10 bg-background/45 px-3 py-3"
+          />
+        </label>
 
-            <label className="block space-y-2">
-              <span className="font-medium text-foreground">Trading 212 API secret</span>
-              <input
-                type="password"
-                value={apiSecret}
-                onChange={(event) => {
-                  setApiSecret(event.target.value)
-                  setSyncState({ kind: "idle" })
-                }}
-                placeholder={hasSavedCredentials ? "Leave blank to use the saved secret in this browser" : "Paste your Trading 212 API secret"}
-                autoComplete="off"
-                spellCheck={false}
-                className="block w-full rounded-2xl border border-white/10 bg-background/45 px-3 py-3"
-              />
-            </label>
+        <label className="block space-y-2">
+          <span className="font-medium text-foreground">Trading 212 API secret</span>
+          <input
+            type="password"
+            value={apiSecret}
+            onChange={(event) => {
+              setApiSecret(event.target.value)
+              setSyncState({ kind: "idle" })
+            }}
+            placeholder={hasSavedCredentials ? "Leave blank to use saved secret" : "Paste your Trading 212 API secret"}
+            autoComplete="off"
+            spellCheck={false}
+            className="block w-full rounded-2xl border border-white/10 bg-background/45 px-3 py-3"
+          />
+        </label>
 
-            <label className="flex items-center gap-2 text-xs">
-              <input type="checkbox" checked={rememberKey} onChange={(event) => setRememberKey(event.target.checked)} />
-              Remember this Trading 212 key pair only in this browser so manual dashboard refresh can re-sync it later.
-            </label>
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={rememberKey} onChange={(event) => setRememberKey(event.target.checked)} />
+          Remember credentials{isSupabaseBackend ? " (saved locally + server for push alerts)" : " in this browser"}
+        </label>
 
-            {hasSavedCredentials ? (
-              <p className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
-                Saved in this browser{savedCredentialsUpdatedAt ? ` • Updated ${formatDateTime(savedCredentialsUpdatedAt)}` : ""}
-              </p>
-            ) : null}
+        {hasSavedCredentials ? (
+          <p className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+            ✓ Credentials saved{savedCredentialsUpdatedAt ? ` • Updated ${formatDateTime(savedCredentialsUpdatedAt)}` : ""}
+          </p>
+        ) : null}
 
-            {syncState.kind !== "idle" ? (
-              <p className={syncState.kind === "error" ? "text-sm text-destructive" : "text-sm text-emerald-400"}>{syncState.message}</p>
-            ) : null}
+        {syncState.kind !== "idle" ? (
+          <p className={syncState.kind === "error" ? "text-sm text-destructive" : "text-sm text-emerald-400"}>{syncState.message}</p>
+        ) : null}
 
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void handleSync()} disabled={isSyncing || (!(apiKey.trim() && apiSecret.trim()) && !hasSavedCredentials)} className="gap-2 rounded-xl">
-                <RefreshCw className={isSyncing ? "size-4 animate-spin" : "size-4"} />
-                {isSyncing ? "Syncing..." : hasSavedCredentials && !apiKey.trim() && !apiSecret.trim() ? "Sync using saved credentials" : "Sync Trading 212 now"}
-              </Button>
-              <Button variant="outline" onClick={() => void handleRemoveSavedKey()} disabled={isSyncing || !hasSavedCredentials} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
-                <KeyRound className="size-4" />
-                Remove saved API credentials
-              </Button>
-              <Button variant="outline" onClick={() => void handleRemoveHoldings()} disabled={isSyncing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
-                <Trash2 className="size-4" />
-                Remove Trading 212 holdings
-              </Button>
-            </div>
-          </>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void handleSync()} disabled={isSyncing || (!(apiKey.trim() && apiSecret.trim()) && !hasSavedCredentials)} className="gap-2 rounded-xl">
+            <RefreshCw className={isSyncing ? "size-4 animate-spin" : "size-4"} />
+            {isSyncing ? "Syncing..." : hasSavedCredentials && !apiKey.trim() && !apiSecret.trim() ? "Sync using saved credentials" : "Sync Trading 212 now"}
+          </Button>
+          <Button variant="outline" onClick={() => void handleRemoveSavedKey()} disabled={isSyncing || !hasSavedCredentials} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+            <KeyRound className="size-4" />
+            Remove credentials
+          </Button>
+          <Button variant="outline" onClick={() => void handleRemoveHoldings()} disabled={isSyncing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+            <Trash2 className="size-4" />
+            Remove holdings
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
 }
-

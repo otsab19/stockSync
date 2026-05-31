@@ -1,16 +1,11 @@
-feat: implement PWA push notifications end-to-end
-
-- Service worker: add install/activate with cache, proper push handler
-  with JSON payload parsing, tag-based dedup, and smart notificationclick
-- Push subscription hook (use-push.ts): handles subscribe/unsubscribe
-  lifecycle with VAPID key, persists to server
-- Push subscribe API route (POST/DELETE /api/push/subscribe): saves/removes
-  subscriptions in Supabase push_subscriptions table
-- Alert job (supabase-alert-job.ts): fully implemented — fetches live
-  positions for all users, compares P&L against ±£25 threshold buckets,
-  sends web-push notifications only on new threshold crossings, cleans
-  stale 410 subscriptions
-- Notification toggle UI component on settings page
-- next.config.mjs: configure @ducanh2912/next-pwa to use custom sw.js
-  with offline fallback to /dashboard
-
+fix: integrations page works in both Supabase and browser modes
+- Remove the "switch to browser" gate from Trading212 and eToro sync
+  cards — both now show the API key form regardless of backend mode
+- In Supabase mode, credentials are persisted to both browser IndexedDB
+  AND the Supabase profiles table (for cron/push notifications)
+- Add /api/credentials route (GET/POST/DELETE) to manage broker keys
+  in the Supabase profiles table
+- Change client-factory to always use IndexedDB for dashboard display
+  (Supabase mode difference is only push notifications via cron)
+- Dashboard works identically in both modes: sync from integrations
+  page, view on dashboard, get push alerts only in Supabase mode
