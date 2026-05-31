@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ArrowUpRight, ArrowDownUp, RefreshCw, TrendingUp, TrendingDown, BarChart3, List } from "lucide-react"
+import { Fragment } from "react"
+import { ArrowUpRight, ArrowDownUp, ChevronDown, ChevronRight, RefreshCw, TrendingUp, TrendingDown, BarChart3, List } from "lucide-react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
 import { Badge } from "@/components/ui/badge"
@@ -218,6 +219,130 @@ function formatMonth(value: string) {
   const [year, month] = value.split("-")
   const d = new Date(Number(year), Number(month) - 1, 1)
   return d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" })
+}
+
+type TableSortCol = "timestamp" | "ticker" | "shares" | "price" | "gross"
+type TableGroupBy = "none" | "ticker" | "broker" | "type"
+
+function HistoryTransactionsTable({ activity }: { activity: PortfolioActivityEvent[] }) {
+  const [sortCol, setSortCol] = useState<TableSortCol>("timestamp")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [groupBy, setGroupBy] = useState<TableGroupBy>("ticker")
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+
+  function handleSort(col: TableSortCol) {
+    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc")
+    else { setSortCol(col); setSortDir("desc") }
+  }
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1
+    return [...activity].sort((a, b) => {
+      switch (sortCol) {
+        case "ticker": return a.ticker.localeCompare(b.ticker) * dir
+        case "shares": return (a.shares - b.shares) * dir
+        case "price": return (a.price - b.price) * dir
+        case "gross": return (a.grossAmountGbp - b.grossAmountGbp) * dir
+        default: return (new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()) * dir
+      }
+    })
+  }, [activity, sortCol, sortDir])
+
+  const groups = useMemo(() => {
+    if (groupBy === "none") return new Map([["All", sorted]])
+    const map = new Map<string, PortfolioActivityEvent[]>()
+    for (const e of sorted) {
+      const key = groupBy === "ticker" ? e.ticker
+        : groupBy === "broker" ? e.brokerLabel
+        : e.type === "buy" ? "Buys" : "Sells"
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(e)
+    }
+    return map
+  }, [sorted, groupBy])
+
+  function toggleGroup(key: string) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  function SortHeader({ col, label, align }: { col: TableSortCol; label: string; align?: string }) {
+    return (
+      <TableHead className={`min-w-[70px] cursor-pointer select-none ${align ?? ""}`} onClick={() => handleSort(col)}>
+        {label} {sortCol === col ? (sortDir === "asc" ? "↑" : "↓") : ""}
+      </TableHead>
+    )
+  }
+
+  return (
+    <Card className="border-white/10">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+        <CardTitle className="text-base">Transactions ({activity.length})</CardTitle>
+        <select
+          value={groupBy}
+          onChange={(e) => { setGroupBy(e.target.value as TableGroupBy); setCollapsedGroups(new Set()) }}
+          className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
+        >
+          <option value="none">No grouping</option>
+          <option value="ticker">Group by stock</option>
+          <option value="broker">Group by broker</option>
+          <option value="type">Group by buy/sell</option>
+        </select>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="max-h-[65vh] overflow-auto">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableRow>
+                <SortHeader col="timestamp" label="Date" />
+                <TableHead className="min-w-[60px]">Broker</TableHead>
+                <SortHeader col="ticker" label="Ticker" />
+                <TableHead className="min-w-[50px]">Type</TableHead>
+                <SortHeader col="shares" label="Shares" align="text-right" />
+                <SortHeader col="price" label="Price" align="text-right" />
+                <SortHeader col="gross" label="Gross" align="text-right" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from(groups.entries()).map(([groupKey, events]) => (
+                <Fragment key={groupKey}>
+                  {groupBy !== "none" && (
+                    <TableRow className="cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]" onClick={() => toggleGroup(groupKey)}>
+                      <TableCell colSpan={7} className="py-2">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          {collapsedGroups.has(groupKey) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                          {groupKey} ({events.length})
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!collapsedGroups.has(groupKey) && events.map((event) => (
+                    <TableRow key={event.id}>
+                      <TableCell><span className="text-xs">{formatLongDateTime(event.timestamp)}</span></TableCell>
+                      <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
+                      <TableCell>
+                        <span className="font-medium text-xs">{event.ticker}</span>
+                        <span className="ml-1 text-[0.6rem] text-muted-foreground">{event.companyName}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={`text-xs font-medium ${event.type === "buy" ? "text-emerald-400" : "text-red-400"}`}>{event.type === "buy" ? "Buy" : "Sell"}</span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(event.shares)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(event.price, event.nativeCurrency)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-xs font-medium">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
+                    </TableRow>
+                  ))}
+                </Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function DashboardHistoryPage() {
@@ -695,50 +820,7 @@ export default function DashboardHistoryPage() {
 
           {/* Trade table or By-ticker summary */}
           {viewMode === "trades" ? (
-            <Card className="border-white/10">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Transactions ({displayActivity.length})</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="max-h-[65vh] overflow-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-card">
-                      <TableRow>
-                        <TableHead className="min-w-[120px]">Date</TableHead>
-                        <TableHead className="min-w-[70px]">Broker</TableHead>
-                        <TableHead className="min-w-[80px]">Ticker</TableHead>
-                        <TableHead className="min-w-[55px]">Type</TableHead>
-                        <TableHead className="min-w-[65px] text-right">Shares</TableHead>
-                        <TableHead className="min-w-[80px] text-right">Price</TableHead>
-                        <TableHead className="min-w-[90px] text-right">Gross (GBP)</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {displayActivity.map((event) => (
-                        <TableRow key={event.id}>
-                          <TableCell>
-                            <span className="text-xs">{formatLongDateTime(event.timestamp)}</span>
-                          </TableCell>
-                          <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
-                          <TableCell>
-                            <div>
-                              <span className="font-medium text-xs">{event.ticker}</span>
-                              <span className="ml-1 text-[0.6rem] text-muted-foreground">{event.companyName}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className={`text-xs font-medium ${event.type === "buy" ? "text-emerald-400" : "text-red-400"}`}>{event.type === "buy" ? "Buy" : "Sell"}</span>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(event.shares)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(event.price, event.nativeCurrency)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs font-medium">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+            <HistoryTransactionsTable activity={displayActivity} />
           ) : (
             <Card className="border-white/10">
               <CardHeader className="pb-3">
