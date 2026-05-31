@@ -94,6 +94,7 @@ export function Trading212ApiSyncCard() {
 
       const importedPositions = await syncBrokerPortfolioFromBrowserApiKey("t212", credentialsToUse)
 
+
       if (rememberKey) {
         await saveBrowserBrokerConnection("t212", credentialsToUse)
         // Also save to Supabase if in supabase mode (for cron/push)

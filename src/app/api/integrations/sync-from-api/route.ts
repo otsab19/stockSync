@@ -2,8 +2,10 @@ import { NextResponse } from "next/server"
 import { randomUUID } from "node:crypto"
 import { getBrokerProvider } from "@/lib/integrations/factory"
 import { createRequestLogger, getErrorLogDetails } from "@/lib/backend/logger"
+import { getConfiguredBackend } from "@/lib/backend/config"
+import { createClient } from "@/utils/supabase/server"
 import type { BrowserApiSyncRequest, BrowserApiSyncResponse } from "@/types/integrations"
-import type { BrokerId } from "@/types/portfolio"
+import type { BrokerId, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 
 function normalizeBrokerId(value: unknown): BrokerId | null {
   return typeof value === "string" && value.trim() ? (value.trim() as BrokerId) : null
@@ -75,6 +77,11 @@ export async function POST(request: Request) {
       activityImported: syncData.activity?.length ?? 0,
     }, "Broker sync succeeded")
 
+    // Record to Supabase if in supabase mode
+    if (getConfiguredBackend() === "supabase") {
+      recordSyncToSupabase(broker, portfolio, syncData.activity).catch(() => {})
+    }
+
     return NextResponse.json<BrowserApiSyncResponse>({
       status: "ok",
       broker,
@@ -93,6 +100,89 @@ export async function POST(request: Request) {
       broker,
       message: error instanceof Error ? `${error.message} [requestId=${requestId}]` : `Broker sync failed. [requestId=${requestId}]`,
     }, { status: 500 })
+  }
+}
+
+async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPosition[], activity?: PortfolioActivityEvent[]) {
+  const supabase = await createClient()
+  if (!supabase) return
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  const now = new Date().toISOString()
+
+  // Upsert broker_connection
+  await (supabase.from("broker_connections") as any).upsert(
+    {
+      user_id: user.id,
+      broker,
+      source_type: "broker_api",
+      sync_mode: "manual",
+      sync_status: "succeeded",
+      is_enabled: true,
+      last_synced_at: now,
+      last_error: null,
+      updated_at: now,
+    },
+    { onConflict: "user_id,broker,source_type" }
+  )
+
+  // Insert sync_run
+  await (supabase.from("sync_runs") as any).insert({
+    user_id: user.id,
+    broker,
+    trigger: "manual",
+    source_type: "broker_api",
+    status: "succeeded",
+    positions_imported: positions.length,
+    started_at: now,
+    finished_at: now,
+  })
+
+  // Replace positions
+  await (supabase.from("positions") as any).delete().eq("user_id", user.id).eq("broker", broker)
+  if (positions.length > 0) {
+    await (supabase.from("positions") as any).insert(
+      positions.map((p) => ({
+        user_id: user.id,
+        broker: p.broker,
+        ticker: p.ticker,
+        company_name: p.companyName,
+        shares: p.shares,
+        avg_price: p.avgPrice,
+        live_price: p.livePrice,
+        native_currency: p.nativeCurrency,
+        fx_rate_to_gbp: p.fxRateToGbp,
+        total_value_gbp: p.normalizedTotalValueGbp,
+        total_pl: p.totalPL,
+        total_pl_percent: p.totalPLPercent,
+        updated_at: now,
+      }))
+    )
+  }
+
+  // Replace activity
+  if (activity && activity.length > 0) {
+    await (supabase.from("activity_events") as any).delete().eq("user_id", user.id).eq("broker", broker)
+    for (let i = 0; i < activity.length; i += 100) {
+      await (supabase.from("activity_events") as any).insert(
+        activity.slice(i, i + 100).map((a) => ({
+          user_id: user.id,
+          broker: a.broker,
+          ticker: a.ticker,
+          company_name: a.companyName,
+          event_type: a.type,
+          shares: a.shares,
+          price: a.price,
+          native_currency: a.nativeCurrency,
+          gross_amount_gbp: a.grossAmountGbp,
+          realised_profit_gbp: a.realisedProfitGbp ?? null,
+          order_type: a.orderType ?? null,
+          timestamp: a.timestamp,
+        }))
+      )
+    }
   }
 }
 
