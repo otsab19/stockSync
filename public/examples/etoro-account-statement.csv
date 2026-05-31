@@ -1,0 +1,5 @@
+Action,Ticker,Name,Units,Open Rate,Current Price,Currency,Asset Type
+Open Position,TSLA,Tesla Inc.,2,176.00,188.60,USD,Stock
+Open Position,MSFT,Microsoft Corporation,4,315.00,323.20,USD,Stock
+Open Position,BTC,Bitcoin,0.05,61000.00,64800.00,USD,Crypto
+

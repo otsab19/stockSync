@@ -1,0 +1,7 @@
+Action,Ticker,Name,No. of shares,Price / share,Currency (Price / share)
+Buy,VUSA,Vanguard S&P 500 UCITS ETF,10,80.00,GBP
+Buy,VUSA,Vanguard S&P 500 UCITS ETF,5,82.00,GBP
+Sell,VUSA,Vanguard S&P 500 UCITS ETF,2,84.00,GBP
+Buy,AAPL,Apple Inc.,3,155.00,USD
+Buy,MSFT,Microsoft Corporation,2,320.00,USD
+

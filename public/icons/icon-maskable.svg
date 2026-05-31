@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">StockSync maskable icon</title>
+  <desc id="desc">A dark square icon with a stock trend line centered for maskable use.</desc>
+  <rect width="512" height="512" fill="#09090b" />
+  <rect x="56" y="56" width="400" height="400" rx="112" fill="#111827" />
+  <path d="M144 336h64l48-72 68 44 76-100" fill="none" stroke="#22c55e" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" />
+  <circle cx="208" cy="336" r="16" fill="#22c55e" />
+  <circle cx="256" cy="264" r="16" fill="#22c55e" />
+  <circle cx="324" cy="308" r="16" fill="#22c55e" />
+  <circle cx="400" cy="208" r="16" fill="#22c55e" />
+</svg>
+

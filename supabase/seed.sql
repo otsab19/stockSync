@@ -1,0 +1,15 @@
+-- StockSync local seed file
+--
+-- This file is intentionally minimal.
+--
+-- Do not store real Trading 212 or eToro API keys here.
+-- Those keys belong in public.profiles per user:
+--   - t212_api_key
+--   - etoro_api_key
+--
+-- The migration creates a trigger that inserts a public.profiles row
+-- automatically when a new auth user is created.
+--
+-- Add local-only demo data here if you need it later, but keep broker keys null
+-- or use disposable test credentials only.
+
