@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -11,6 +11,40 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get("code")
+
+    // Handle hash-based tokens (Supabase sometimes uses hash)
+    const hash = window.location.hash
+    if (hash && hash.includes("access_token")) {
+      setVerifying(true)
+      const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) {
+          window.location.href = "/dashboard"
+        } else {
+          setVerifying(false)
+        }
+      })
+      return
+    }
+
+    if (code) {
+      setVerifying(true)
+      const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) {
+          setError(error.message)
+          setVerifying(false)
+        } else {
+          window.location.href = "/dashboard"
+        }
+      })
+    }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -21,7 +55,7 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/dashboard` },
+      options: { emailRedirectTo: `${window.location.origin}/login` },
     })
 
     if (error) {
@@ -31,6 +65,14 @@ export default function LoginPage() {
     }
 
     setLoading(false)
+  }
+
+  if (verifying) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <p className="text-sm text-muted-foreground">Signing you in...</p>
+      </div>
+    )
   }
 
   return (
