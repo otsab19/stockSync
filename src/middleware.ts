@@ -10,7 +10,7 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone()
 
   // Public routes that don't need auth
-  const publicPaths = ["/login", "/api/cron"]
+  const publicPaths = ["/login", "/auth/callback", "/api/cron"]
   if (publicPaths.some((p) => url.pathname.startsWith(p))) {
     return NextResponse.next()
   }
