@@ -1,11 +1,10 @@
 "use client"
 
 import { Fragment, useEffect, useMemo, useState } from "react"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { CurrencyMode, PortfolioPosition } from "@/types/portfolio"
 import { formatMoney, getAlertBadgeVariant, getDisplayCurrency, getDisplayProfit, getDisplayValue } from "@/lib/dashboard/filter-engine"
@@ -18,178 +17,174 @@ interface PortfolioTableProps {
   highlightedTicker?: string | null
 }
 
+type GroupBy = "none" | "broker" | "assetType" | "alertStatus"
+
+function groupPositions(positions: PortfolioPosition[], groupBy: GroupBy): Map<string, PortfolioPosition[]> {
+  if (groupBy === "none") return new Map([["All", positions]])
+
+  const map = new Map<string, PortfolioPosition[]>()
+  for (const p of positions) {
+    const key = groupBy === "broker" ? p.brokerLabel
+      : groupBy === "assetType" ? p.assetType.toUpperCase()
+      : p.alertStatus
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(p)
+  }
+  return map
+}
+
 export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoading, highlightedTicker = null }: PortfolioTableProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const pageSize = 7
+  const [groupBy, setGroupBy] = useState<GroupBy>("none")
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
-  const totalPages = Math.max(1, Math.ceil(portfolio.length / pageSize))
-  const pagedPortfolio = useMemo(
-    () => portfolio.slice((page - 1) * pageSize, page * pageSize),
-    [page, portfolio]
-  )
-  const pageStart = portfolio.length === 0 ? 0 : (page - 1) * pageSize + 1
-  const pageEnd = Math.min(portfolio.length, page * pageSize)
+  const groups = useMemo(() => groupPositions(portfolio, groupBy), [portfolio, groupBy])
 
   useEffect(() => {
-    setPage(1)
     setExpandedId(null)
-  }, [portfolio])
+    setCollapsedGroups(new Set())
+  }, [portfolio, groupBy])
 
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages)
-    }
-  }, [page, totalPages])
+  function toggleGroup(key: string) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   return (
     <Card className="border-white/10">
-      <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <CardTitle>Holdings</CardTitle>
-          <CardDescription>Current positions loaded in the dashboard.</CardDescription>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline">{portfolio.length} total</Badge>
-          {portfolio.length > 0 ? <Badge variant="outline">Showing {pageStart}-{pageEnd}</Badge> : null}
-        </div>
+      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+        <CardTitle className="text-base">Holdings ({portfolio.length})</CardTitle>
+        <select
+          value={groupBy}
+          onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+          className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
+        >
+          <option value="none">No grouping</option>
+          <option value="broker">Group by broker</option>
+          <option value="assetType">Group by type</option>
+          <option value="alertStatus">Group by alert</option>
+        </select>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Ticker</TableHead>
-              <TableHead>Broker</TableHead>
-              <TableHead className="text-right">Shares</TableHead>
-              <TableHead className="text-right">Avg. Cost</TableHead>
-              <TableHead className="text-right">Live Price</TableHead>
-              <TableHead className="text-right">Total Value</TableHead>
-              <TableHead className="text-right">Total P/L</TableHead>
-              <TableHead>Alert Status</TableHead>
-              <TableHead className="text-right">Details</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
+      <CardContent className="p-0">
+        <div className="max-h-[70vh] overflow-auto">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
-                <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
-                  Loading portfolio data...
-                </TableCell>
+                <TableHead className="min-w-[140px]">Ticker</TableHead>
+                <TableHead className="min-w-[90px]">Broker</TableHead>
+                <TableHead className="min-w-[70px] text-right">Shares</TableHead>
+                <TableHead className="min-w-[90px] text-right">Avg Cost</TableHead>
+                <TableHead className="min-w-[90px] text-right">Price</TableHead>
+                <TableHead className="min-w-[100px] text-right">Value</TableHead>
+                <TableHead className="min-w-[90px] text-right">P/L</TableHead>
+                <TableHead className="min-w-[80px]">Alert</TableHead>
               </TableRow>
-            ) : portfolio.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
-                  {emptyMessage}
-                </TableCell>
-              </TableRow>
-            ) : (
-              pagedPortfolio.map((position) => {
-                const expanded = expandedId === position.id
-                const displayCurrency = getDisplayCurrency(position, currencyMode)
-
-                return (
-                  <Fragment key={position.id}>
-                    <TableRow
-                      aria-expanded={expanded}
-                      className={`cursor-pointer ${highlightedTicker === position.ticker ? "bg-emerald-500/10" : ""}`}
-                      onClick={() => setExpandedId(expanded ? null : position.id)}
-                    >
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{position.ticker}</span>
-                            <Badge variant="ghost" className="h-5 border border-white/8 bg-white/[0.03] px-1.5 text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">
-                              {position.assetType}
-                            </Badge>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                    Loading...
+                  </TableCell>
+                </TableRow>
+              ) : portfolio.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                    {emptyMessage}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                Array.from(groups.entries()).map(([groupKey, positions]) => (
+                  <Fragment key={groupKey}>
+                    {groupBy !== "none" && (
+                      <TableRow
+                        className="cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]"
+                        onClick={() => toggleGroup(groupKey)}
+                      >
+                        <TableCell colSpan={8} className="py-2">
+                          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            {collapsedGroups.has(groupKey)
+                              ? <ChevronRight className="size-3.5" />
+                              : <ChevronDown className="size-3.5" />
+                            }
+                            {groupKey} ({positions.length})
                           </div>
-                          <span className="text-xs text-muted-foreground">{position.companyName}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{position.brokerLabel}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">{position.shares}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(position.avgPrice, displayCurrency)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(position.livePrice, displayCurrency)}</TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">{formatMoney(getDisplayValue(position, currencyMode), displayCurrency)}</TableCell>
-                      <TableCell className={`text-right font-medium tabular-nums ${position.totalPL >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {position.totalPL >= 0 ? "+" : ""}
-                        {formatMoney(getDisplayProfit(position, currencyMode), displayCurrency)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getAlertBadgeVariant(position.alertStatus)}>
-                          {position.alertStatus === "near-alert"
-                            ? "Near Alert ⚠️"
-                            : position.alertStatus === "triggered"
-                              ? "Triggered"
-                              : "Stable"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          Details
-                          <ChevronDown className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow key={`${position.id}-expanded`}>
-                      <TableCell colSpan={9} className="p-0">
-                        <AnimatePresence initial={false}>
-                          {expanded ? (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="grid gap-4 border-t border-white/8 bg-white/[0.03] px-4 py-4 text-sm text-muted-foreground lg:grid-cols-[1.2fr_1fr]">
-                                <div className="space-y-2 rounded-2xl border border-white/8 bg-background/30 p-4">
-                                  <p className="font-medium text-foreground">Position details</p>
-                                  <p>• Alert threshold gap: £{position.alertDelta.toFixed(2)}</p>
-                                  <p>• Asset type: {position.assetType.toUpperCase()}</p>
-                                  <p>• Broker: {position.brokerLabel}</p>
-                                  <p>• Recent change: {position.recentChange >= 0 ? "+" : ""}{position.recentChange.toFixed(2)}%</p>
-                                </div>
-                                <div className="space-y-2 rounded-2xl border border-white/8 bg-background/30 p-4">
-                                  <p className="font-medium text-foreground">Value snapshot</p>
-                                  <div className="rounded-xl border border-white/8 bg-background/50 px-3 py-3 text-xs">
-                                    <p>Total value: {formatMoney(getDisplayValue(position, currencyMode), displayCurrency)}</p>
-                                    <p>Total P/L: {position.totalPL >= 0 ? "+" : ""}{formatMoney(getDisplayProfit(position, currencyMode), displayCurrency)}</p>
-                                    <p>Live price: {formatMoney(position.livePrice, displayCurrency)}</p>
-                                  </div>
-                                </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {!collapsedGroups.has(groupKey) && positions.map((position) => {
+                      const expanded = expandedId === position.id
+                      const displayCurrency = getDisplayCurrency(position, currencyMode)
+
+                      return (
+                        <Fragment key={position.id}>
+                          <TableRow
+                            className={`cursor-pointer ${highlightedTicker === position.ticker ? "bg-emerald-500/10" : ""}`}
+                            onClick={() => setExpandedId(expanded ? null : position.id)}
+                          >
+                            <TableCell>
+                              <div>
+                                <span className="font-medium">{position.ticker}</span>
+                                <span className="ml-1.5 text-[0.65rem] text-muted-foreground">{position.companyName}</span>
                               </div>
-                            </motion.div>
-                          ) : null}
-                        </AnimatePresence>
-                      </TableCell>
-                    </TableRow>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-xs text-muted-foreground">{position.brokerLabel}</span>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">{position.shares}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatMoney(position.avgPrice, displayCurrency)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatMoney(position.livePrice, displayCurrency)}</TableCell>
+                            <TableCell className="text-right font-medium tabular-nums">{formatMoney(getDisplayValue(position, currencyMode), displayCurrency)}</TableCell>
+                            <TableCell className={`text-right font-medium tabular-nums ${position.totalPL >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {position.totalPL >= 0 ? "+" : ""}{formatMoney(getDisplayProfit(position, currencyMode), displayCurrency)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={getAlertBadgeVariant(position.alertStatus)} className="text-[0.6rem]">
+                                {position.alertStatus === "near-alert" ? "⚠️" : position.alertStatus === "triggered" ? "🔴" : "✓"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                          {expanded && (
+                            <TableRow>
+                              <TableCell colSpan={8} className="p-0">
+                                <AnimatePresence initial={false}>
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div className="grid gap-3 border-t border-white/8 bg-white/[0.02] px-4 py-3 text-xs text-muted-foreground sm:grid-cols-2">
+                                      <div className="space-y-1">
+                                        <p>Alert gap: £{position.alertDelta.toFixed(2)}</p>
+                                        <p>Type: {position.assetType.toUpperCase()}</p>
+                                        <p>Recent: {position.recentChange >= 0 ? "+" : ""}{position.recentChange.toFixed(2)}%</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p>Value: {formatMoney(getDisplayValue(position, currencyMode), displayCurrency)}</p>
+                                        <p>P/L: {position.totalPL >= 0 ? "+" : ""}{formatMoney(getDisplayProfit(position, currencyMode), displayCurrency)} ({position.totalPLPercent.toFixed(1)}%)</p>
+                                        <p>FX: {position.fxRateToGbp.toFixed(4)}</p>
+                                      </div>
+                                    </div>
+                                  </motion.div>
+                                </AnimatePresence>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      )
+                    })}
                   </Fragment>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              disabled={page === totalPages}
-            >
-              Next
-            </Button>
-          </div>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>
   )
 }
-
