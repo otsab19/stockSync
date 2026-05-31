@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { DesktopSidebar, MobileBottomNav, MobileHeader } from "@/components/dashboard/navigation";
+import { AlertPoller } from "@/components/notifications/alert-poller";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -28,6 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.className} min-h-screen bg-background text-foreground`}>
+        <AlertPoller />
         <div className="mx-auto flex min-h-screen w-full max-w-[120rem]">
           <Suspense fallback={<div className="hidden w-[17.5rem] shrink-0 border-r border-white/8 bg-sidebar/70 backdrop-blur md:block xl:w-72" />}>
             <DesktopSidebar />
