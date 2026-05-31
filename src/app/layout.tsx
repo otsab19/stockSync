@@ -8,8 +8,12 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "StockSync",
-  description: "Unified portfolio workspace for Trading 212 and eToro.",
+  description: "Portfolio tracker for Trading 212 and eToro.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export const viewport: Viewport = {

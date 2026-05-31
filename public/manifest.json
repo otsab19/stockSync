@@ -1,22 +1,28 @@
 {
-  "name": "StockSync PWA",
+  "name": "StockSync",
   "short_name": "StockSync",
-  "description": "Unified portfolio dashboard tracking Trading 212 and eToro.",
+  "description": "Portfolio tracker for Trading 212 and eToro.",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icons/icon.svg",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png"
     },
     {
-      "src": "/icons/icon-maskable.svg",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
