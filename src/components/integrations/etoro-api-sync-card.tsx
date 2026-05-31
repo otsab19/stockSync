@@ -49,7 +49,11 @@ export function EtoroApiSyncCard() {
           const res = await fetch("/api/credentials")
           if (!isMounted) return
           const data = await res.json()
-          if (data?.credentials?.etoro?.hasKey) {
+          if (data?.credentials?.etoro?.apiKey && data?.credentials?.etoro?.apiSecret) {
+            await saveBrowserBrokerConnection("etoro", {
+              apiKey: data.credentials.etoro.apiKey,
+              apiSecret: data.credentials.etoro.apiSecret,
+            })
             setHasSavedCredentials(true)
             setSavedCredentialsUpdatedAt(null)
           }

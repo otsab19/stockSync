@@ -46,12 +46,17 @@ export function Trading212ApiSyncCard() {
           return
         }
 
-        // If supabase mode, also check server-stored credentials
+        // If supabase mode, fetch from server and save locally
         if (isSupabaseBackend) {
           const res = await fetch("/api/credentials")
           if (!isMounted) return
           const data = await res.json()
-          if (data?.credentials?.t212?.hasKey) {
+          if (data?.credentials?.t212?.apiKey && data?.credentials?.t212?.apiSecret) {
+            // Save to local IndexedDB so sync works on this device
+            await saveBrowserBrokerConnection("t212", {
+              apiKey: data.credentials.t212.apiKey,
+              apiSecret: data.credentials.t212.apiSecret,
+            })
             setHasSavedCredentials(true)
             setSavedCredentialsUpdatedAt(null)
           }

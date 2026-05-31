@@ -33,8 +33,18 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     credentials: {
-      t212: { hasKey: Boolean(profile?.t212_api_key), hasSecret: Boolean(profile?.t212_api_secret) },
-      etoro: { hasKey: Boolean(profile?.etoro_api_key), hasSecret: Boolean(profile?.etoro_api_secret) },
+      t212: {
+        hasKey: Boolean(profile?.t212_api_key),
+        hasSecret: Boolean(profile?.t212_api_secret),
+        apiKey: profile?.t212_api_key ?? null,
+        apiSecret: profile?.t212_api_secret ?? null,
+      },
+      etoro: {
+        hasKey: Boolean(profile?.etoro_api_key),
+        hasSecret: Boolean(profile?.etoro_api_secret),
+        apiKey: profile?.etoro_api_key ?? null,
+        apiSecret: profile?.etoro_api_secret ?? null,
+      },
     },
   })
 }
