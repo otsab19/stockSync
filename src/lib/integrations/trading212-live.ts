@@ -6,7 +6,7 @@ import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/typ
 const DEFAULT_TRADING212_API_BASE_URL = "https://live.trading212.com/api/v0"
 const DEFAULT_TRADING212_HISTORY_PATH = "/equity/history/orders?limit=50"
 const USD_TO_GBP_FALLBACK_RATE = 0.79
-const TRADING212_HISTORY_PAGE_DELAY_MS = 12_000 // 6 req/min limit — wait 12s between pages for safety
+const TRADING212_HISTORY_PAGE_DELAY_MS = 6_000 // 6 req/min limit — wait 6s between pages
 
 type Trading212ApiRow = Record<string, unknown>
 

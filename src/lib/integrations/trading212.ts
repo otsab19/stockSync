@@ -33,7 +33,7 @@ export const trading212Provider: BrokerProvider = {
 
     try {
       // Small delay to avoid rate limiting after positions fetch
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      await new Promise((resolve) => setTimeout(resolve, 1000))
       return {
         positions,
         activity: await fetchTrading212ActivityFromApi(credentials),

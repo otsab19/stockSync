@@ -338,10 +338,13 @@ export default function DashboardHistoryPage() {
   return (
     <PageShell>
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
+          {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers (T212 history may take ~30s due to rate limits)...</p>}
+        </div>
         <Button variant="outline" size="sm" onClick={() => void fetchPortfolio(true)} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
           <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
-          {isRefreshing ? "Refreshing..." : "Refresh"}
+          {isRefreshing ? "Syncing..." : "Refresh"}
         </Button>
       </div>
 
