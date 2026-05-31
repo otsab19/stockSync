@@ -15,9 +15,13 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const code = params.get("code")
 
-    // Handle hash-based tokens (Supabase sometimes uses hash)
+    // Show error if redirected back with failure
+    if (params.get("error")) {
+      setError("Sign-in failed. Please try again.")
+    }
+
+    // Handle hash-based tokens (Supabase implicit flow fallback)
     const hash = window.location.hash
     if (hash && hash.includes("access_token")) {
       setVerifying(true)
@@ -27,20 +31,6 @@ export default function LoginPage() {
           window.location.href = "/dashboard"
         } else {
           setVerifying(false)
-        }
-      })
-      return
-    }
-
-    if (code) {
-      setVerifying(true)
-      const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) {
-          setError(error.message)
-          setVerifying(false)
-        } else {
-          window.location.href = "/dashboard"
         }
       })
     }
@@ -55,7 +45,7 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/login` },
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     })
 
     if (error) {
