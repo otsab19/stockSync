@@ -834,7 +834,10 @@ async function fetchEtoroJson<T>(baseUrl: string, path: string, headers: ReturnT
   const response = await fetch(`${baseUrl}${path}`, {
     method: "GET",
     cache: "no-store",
-    headers,
+    headers: {
+      ...headers,
+      "x-request-id": crypto.randomUUID(),
+    },
   })
 
   if (!response.ok) {

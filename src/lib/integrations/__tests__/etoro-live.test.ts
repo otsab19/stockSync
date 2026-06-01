@@ -224,5 +224,55 @@ describe("eToro live mapper", () => {
     expect(sell?.price).toBe(13.24)
     expect(sell?.grossAmountGbp).toBe(13.24)
   })
+
+  it("uses fresh eToro request IDs across history and metadata calls", async () => {
+    const requestIds: string[] = []
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const requestUrl = String(url)
+      const headers = init?.headers as Record<string, string> | undefined
+      if (headers?.["x-request-id"]) {
+        requestIds.push(headers["x-request-id"])
+      }
+
+      if (requestUrl.includes("/trading/info/trade/history")) {
+        return Response.json([
+          {
+            instrumentID: 2072,
+            isBuy: true,
+            openTimestamp: "2026-06-01T09:00:00Z",
+            closeTimestamp: "2026-06-01T15:00:00Z",
+            openRate: 1000,
+            closeRate: 1324,
+            units: 1,
+            investment: 1000,
+          },
+        ])
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return Response.json({
+          instrumentDisplayDatas: [{
+            instrumentID: 2072,
+            instrumentDisplayName: "Rolls-Royce Holdings",
+            symbolFull: "RR.L",
+            priceSource: "LSE",
+          }],
+        })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const activity = await fetchEtoroActivityFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+
+    expect(activity.find((event) => event.type === "sell")?.ticker).toBe("RR")
+    expect(new Set(requestIds).size).toBe(requestIds.length)
+  })
 })
 

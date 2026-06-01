@@ -254,6 +254,10 @@ function formatMonth(value: string) {
   return d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" })
 }
 
+function shouldShowCompanyName(event: PortfolioActivityEvent) {
+  return event.companyName.trim().toUpperCase() !== event.ticker.trim().toUpperCase()
+}
+
 type TableSortCol = "timestamp" | "ticker" | "shares" | "price" | "gross"
 type TableGroupBy = "none" | "ticker" | "broker" | "type"
 
@@ -362,7 +366,9 @@ function HistoryTransactionsTable({ activity }: { activity: PortfolioActivityEve
                       <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
                       <TableCell>
                         <span className="font-medium text-xs">{event.ticker}</span>
-                        <span className="ml-1 text-[0.6rem] text-muted-foreground">{event.companyName}</span>
+                        {shouldShowCompanyName(event) ? (
+                          <span className="ml-1 text-[0.6rem] text-muted-foreground">{event.companyName}</span>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <span className={`text-xs font-medium ${event.type === "buy" ? "text-emerald-400" : "text-red-400"}`}>{event.type === "buy" ? "Buy" : "Sell"}</span>
