@@ -396,11 +396,11 @@ export default function DashboardHistoryPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("trades")
 
-  const fetchPortfolio = useCallback(async () => {
+  const fetchPortfolio = useCallback(async ({ refresh = false }: { refresh?: boolean } = {}) => {
     try {
-      setIsRefreshing(true)
+      if (refresh) setIsRefreshing(true)
       const repository = createClientPortfolioRepository()
-      const data = await repository.getPortfolio({ refresh: true, includeActivity: true })
+      const data = await repository.getPortfolio({ refresh, includeActivity: true, preferCache: !refresh })
       setPortfolioResponse(data)
       if (data.status === "ok") { setDashboardState("ready"); setMessage(data.message ?? null); return }
       setDashboardState(data.status)
@@ -411,7 +411,7 @@ export default function DashboardHistoryPage() {
       setDashboardState("error")
       setMessage("Unable to load portfolio history from the selected backend.")
     } finally {
-      setIsRefreshing(false)
+      if (refresh) setIsRefreshing(false)
     }
   }, [])
 
@@ -514,7 +514,7 @@ export default function DashboardHistoryPage() {
           </p>
           {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers (T212 history may take ~30s due to rate limits)...</p>}
         </div>
-        <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+        <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
           <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
           {isRefreshing ? "Syncing..." : "Refresh"}
         </Button>
@@ -684,13 +684,13 @@ export default function DashboardHistoryPage() {
           <CardHeader>
             <CardTitle>No trade history loaded yet</CardTitle>
             <CardDescription>
-              Sync your broker via the API on the integrations page. StockSync will refresh trade data automatically when this page opens.
+              Sync your broker via the API on the integrations page, then use Refresh to pull the latest trade history.
               Trading 212 may rate-limit history requests — if it fails, wait a minute and try again.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3 text-sm text-muted-foreground">
             <Link href="/integrations" className="font-medium text-primary transition-colors hover:text-primary/80">Open broker connections</Link>
-            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing}>
+            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing}>
               <RefreshCw className={isRefreshing ? "size-3.5 animate-spin mr-1" : "size-3.5 mr-1"} />
               Sync now
             </Button>

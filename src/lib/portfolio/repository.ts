@@ -3,6 +3,7 @@ import type { PortfolioApiResponse } from "@/types/portfolio"
 export type ClientPortfolioRequestOptions = {
   refresh?: boolean
   includeActivity?: boolean
+  preferCache?: boolean
 }
 
 export interface ClientPortfolioRepository {
