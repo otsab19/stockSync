@@ -94,6 +94,29 @@ describe("Trading 212 live mapper", () => {
     expect(positions[0].ticker).toBe("VOD")
   })
 
+  it("keeps positions that only expose wallet currency", () => {
+    const payload = [
+      {
+        ticker: "ALHPI",
+        quantity: 8,
+        averagePricePaid: 12,
+        currentPrice: 9.39,
+        walletImpact: {
+          currency: "GBP",
+          result: -20.88,
+        },
+        name: "Amundi Physical Gold",
+      },
+    ]
+
+    const positions = mapTrading212PortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0].ticker).toBe("ALHPI")
+    expect(positions[0].nativeCurrency).toBe("GBP")
+    expect(positions[0].totalPL).toBeCloseTo(-20.88, 2)
+  })
+
   it("throws when positions have zero shares (safeguard)", () => {
     const payload = [
       {

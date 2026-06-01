@@ -147,6 +147,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
 
     let alertsSent = 0
     let usersChecked = 0
+    const syncErrors: string[] = []
 
     for (const profile of profiles) {
       const positions: PortfolioPosition[] = []
@@ -161,7 +162,9 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
             })
             await recordScheduledPositions(supabase, profile.id, "t212", pos)
             positions.push(...pos)
-          } catch { /* skip on error */ }
+          } catch (error) {
+            syncErrors.push(`Trading 212 sync failed for ${profile.id}: ${error instanceof Error ? error.message : "Unknown error"}`)
+          }
         }
       }
 
@@ -175,7 +178,9 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
             })
             await recordScheduledPositions(supabase, profile.id, "etoro", pos)
             positions.push(...pos)
-          } catch { /* skip on error */ }
+          } catch (error) {
+            syncErrors.push(`eToro sync failed for ${profile.id}: ${error instanceof Error ? error.message : "Unknown error"}`)
+          }
         }
       }
 
@@ -293,7 +298,10 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
     return {
       success: true,
       backend: "supabase",
-      message: `Checked ${usersChecked} user(s), sent ${alertsSent} alert notification(s).`,
+      message: [
+        `Checked ${usersChecked} user(s), sent ${alertsSent} alert notification(s).`,
+        syncErrors.length > 0 ? syncErrors.join(" ") : null,
+      ].filter(Boolean).join(" "),
     }
   }
 }

@@ -149,14 +149,15 @@ function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | 
   const ticker = getStringValue(row, ["instrument.ticker", "ticker", "symbol", "instrumentCode", "isin", "instrument.isin"])
   const shares = getNumberValue(row, ["quantity", "ownedQuantity", "qty", "shares"])
   const walletCurrency = normalizeCurrency(getStringValue(row, ["walletImpact.currency", "accountCurrency"]))
+  const instrumentCurrency = normalizeCurrency(getStringValue(row, ["currencyCode", "currency", "instrument.currency", "instrumentCurrency", "instrumentCurrencyCode", "instrument.currencyCode"]))
+  const currency = instrumentCurrency ?? walletCurrency
   const totalCost = getNumberValue(row, ["walletImpact.totalCost"])
   const currentValue = getNumberValue(row, ["walletImpact.currentValue"])
   const averagePrice = getNumberValue(row, ["averagePricePaid", "averagePrice", "avgPrice", "priceAvg", "weightedAveragePrice"])
-    ?? (shares && shares > 0 && totalCost !== null && walletCurrency === null ? totalCost / shares : null)
+    ?? (shares && shares > 0 && totalCost !== null && walletCurrency === currency ? totalCost / shares : null)
   const livePrice = getNumberValue(row, ["currentPrice", "price", "lastPrice", "marketPrice", "closePrice"])
-    ?? (shares && shares > 0 && currentValue !== null && walletCurrency === null ? currentValue / shares : null)
+    ?? (shares && shares > 0 && currentValue !== null && walletCurrency === currency ? currentValue / shares : null)
   const companyName = getStringValue(row, ["instrument.name", "name", "instrumentName", "displayName", "shortName"])
-  const currency = normalizeCurrency(getStringValue(row, ["currencyCode", "currency", "instrument.currency", "instrumentCurrency", "instrumentCurrencyCode", "instrument.currencyCode"]))
   const recentChange = getNumberValue(row, ["currentPriceChange", "priceChange", "todayChange", "recentChange"]) ?? 0
   const explicitTotalPlValue = getNumberValue(row, [
     "walletImpact.result",
