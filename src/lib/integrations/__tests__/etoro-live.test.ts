@@ -55,6 +55,58 @@ describe("eToro live mapper", () => {
     expect(positions[0].normalizedTotalValueGbp).toBe(520)
   })
 
+  it("does not treat invested Amount as share count", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [
+          {
+            instrumentID: 1001,
+            IsBuy: true,
+            Amount: 525,
+            averageOpen: 175,
+            currentRate: 182.5,
+            currency: "USD",
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0].shares).toBe(3)
+    expect(positions[0].normalizedTotalValueGbp).toBeCloseTo(432.525, 2)
+  })
+
+  it("normalizes LSE suffixes and known ticker aliases", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [
+          {
+            ticker: "RRl",
+            IsBuy: true,
+            units: 10,
+            averageOpen: 150,
+            currentRate: 155,
+            currency: "GBp",
+          },
+          {
+            ticker: "GIG",
+            IsBuy: true,
+            units: 1,
+            averageOpen: 2,
+            currentRate: 3,
+            currency: "USD",
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions.map((position) => position.ticker)).toEqual(["RR", "BBAI"])
+  })
+
   it("throws for short positions (isBuy=false) when no long positions exist", () => {
     const payload = {
       clientPortfolio: {

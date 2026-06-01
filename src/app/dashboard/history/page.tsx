@@ -41,7 +41,37 @@ const defaultHistoryFilters: HistoryFilterState = {
   quickFilter: "none",
 }
 
+const activityTypeLabels: Record<ActivityFilterType, string> = {
+  all: "All trades",
+  buy: "Buys",
+  sell: "Sells",
+}
 
+const timeRangeLabels: Record<ActivityTimeRange, string> = {
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+  "90d": "Last 90 days",
+  ytd: "Year to date",
+  all: "All time",
+}
+
+const quickFilterLabels: Record<QuickFilter, string> = {
+  none: "All",
+  biggest: "Biggest trades",
+  "most-traded": "Most traded",
+  profitable: "Profitable only",
+  "loss-making": "Loss-making only",
+}
+
+function hasActiveHistoryFilters(filters: HistoryFilterState) {
+  return filters.searchQuery.trim().length > 0
+    || filters.brokers.length > 0
+    || filters.activityType !== defaultHistoryFilters.activityType
+    || filters.timeRange !== defaultHistoryFilters.timeRange
+    || filters.sortBy !== defaultHistoryFilters.sortBy
+    || filters.sortOrder !== defaultHistoryFilters.sortOrder
+    || filters.quickFilter !== defaultHistoryFilters.quickFilter
+}
 
 const brokerColours = ["#5eead4", "#60a5fa", "#f59e0b", "#a78bfa", "#f472b6", "#22d3ee"]
 
@@ -56,6 +86,7 @@ type TickerSummary = {
   totalBoughtGbp: number
   totalSoldGbp: number
   totalShares: number
+  soldShares: number
   avgBuyPrice: number
   avgSellPrice: number
   netPLGbp: number
@@ -118,6 +149,7 @@ function buildTickerSummaries(activity: PortfolioActivityEvent[]): TickerSummary
       totalBoughtGbp: 0,
       totalSoldGbp: 0,
       totalShares: 0,
+      soldShares: 0,
       avgBuyPrice: 0,
       avgSellPrice: 0,
       netPLGbp: 0,
@@ -132,10 +164,11 @@ function buildTickerSummaries(activity: PortfolioActivityEvent[]): TickerSummary
     } else {
       existing.sellCount += 1
       existing.totalSoldGbp += event.grossAmountGbp
+      existing.soldShares += event.shares
     }
-    existing.netPLGbp = existing.totalSoldGbp - existing.totalBoughtGbp
-    existing.avgBuyPrice = existing.buyCount > 0 ? existing.totalBoughtGbp / existing.buyCount : 0
-    existing.avgSellPrice = existing.sellCount > 0 ? existing.totalSoldGbp / existing.sellCount : 0
+    existing.avgBuyPrice = existing.totalShares > 0 ? existing.totalBoughtGbp / existing.totalShares : 0
+    existing.avgSellPrice = existing.soldShares > 0 ? existing.totalSoldGbp / existing.soldShares : 0
+    existing.netPLGbp = existing.soldShares > 0 ? existing.totalSoldGbp - (existing.avgBuyPrice * existing.soldShares) : 0
     map.set(key, existing)
   })
 
@@ -463,12 +496,16 @@ export default function DashboardHistoryPage() {
 
   const hasAnyActivity = rawActivity.length > 0
   const hasFilteredResults = displayActivity.length > 0
+  const activeHistoryFilters = hasActiveHistoryFilters(filters)
 
   return (
     <PageShell>
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Showing {displayActivity.length} of {rawActivity.length} trade{rawActivity.length === 1 ? "" : "s"}
+          </p>
           {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers (T212 history may take ~30s due to rate limits)...</p>}
         </div>
         <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
@@ -508,9 +545,18 @@ export default function DashboardHistoryPage() {
       {/* Filters */}
       <Card className="border-white/10">
         <CardHeader className="gap-4">
-          <div>
-            <CardTitle>Filters & view</CardTitle>
-            <CardDescription>Search, filter by time/broker/side, or use quick insights to slice your data.</CardDescription>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <CardTitle>Filters & view</CardTitle>
+              <CardDescription>
+                Search, filter by time/broker/side, or use quick insights to slice your data.
+              </CardDescription>
+            </div>
+            {activeHistoryFilters ? (
+              <Button variant="ghost" size="sm" onClick={() => setFilters(defaultHistoryFilters)}>
+                Reset filters
+              </Button>
+            ) : null}
           </div>
           <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr_1fr_1fr]">
             <label className="space-y-2 text-sm">
@@ -518,7 +564,7 @@ export default function DashboardHistoryPage() {
               <input
                 value={filters.searchQuery}
                 onChange={(e) => setFilters((c) => ({ ...c, searchQuery: e.target.value }))}
-                placeholder="Ticker, company, broker…"
+                placeholder="Search ticker, company, broker, order type"
                 className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none"
               />
             </label>
@@ -529,11 +575,9 @@ export default function DashboardHistoryPage() {
                 onChange={(e) => setFilters((c) => ({ ...c, timeRange: e.target.value as ActivityTimeRange }))}
                 className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none"
               >
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="90d">Last 90 days</option>
-                <option value="ytd">Year to date</option>
-                <option value="all">All activity</option>
+                {Object.entries(timeRangeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
               </select>
             </label>
             <label className="space-y-2 text-sm">
@@ -563,12 +607,28 @@ export default function DashboardHistoryPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {activeHistoryFilters ? (
+              <>
+                {filters.searchQuery.trim() ? <Badge variant="outline">Search: {filters.searchQuery.trim()}</Badge> : null}
+                {filters.timeRange !== "all" ? <Badge variant="outline">Range: {timeRangeLabels[filters.timeRange]}</Badge> : null}
+                {filters.activityType !== "all" ? <Badge variant="outline">Side: {activityTypeLabels[filters.activityType]}</Badge> : null}
+                {filters.quickFilter !== "none" ? <Badge variant="outline">Quick: {quickFilterLabels[filters.quickFilter]}</Badge> : null}
+                {filters.brokers.map((broker) => (
+                  <Badge key={broker} variant="outline">Broker: {availableBrokers.find((entry) => entry.broker === broker)?.label ?? broker}</Badge>
+                ))}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">All trade history is visible. Use filters to focus the table and charts.</p>
+            )}
+          </div>
+
           {/* Type filter */}
           <div className="flex flex-wrap gap-2">
             {(["all", "buy", "sell"] as const).map((type) => (
               <Button key={type} size="sm" variant={filters.activityType === type ? "default" : "outline"}
                 onClick={() => setFilters((c) => ({ ...c, activityType: type }))}>
-                {type === "all" ? "All trades" : type === "buy" ? "Buys" : "Sells"}
+                {activityTypeLabels[type]}
               </Button>
             ))}
           </div>
@@ -592,13 +652,7 @@ export default function DashboardHistoryPage() {
           {/* Quick filter chips */}
           <div className="flex flex-wrap gap-2">
             <span className="self-center text-xs font-medium text-muted-foreground mr-1">Quick:</span>
-            {([
-              ["none", "All"],
-              ["biggest", "Biggest trades"],
-              ["most-traded", "Most traded"],
-              ["profitable", "Profitable only"],
-              ["loss-making", "Loss-making only"],
-            ] as [QuickFilter, string][]).map(([key, label]) => (
+            {(Object.entries(quickFilterLabels) as [QuickFilter, string][]).map(([key, label]) => (
               <Button key={key} size="sm" variant={filters.quickFilter === key ? "default" : "outline"}
                 onClick={() => setFilters((c) => ({ ...c, quickFilter: key }))}>
                 {label}

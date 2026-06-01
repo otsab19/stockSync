@@ -1,4 +1,4 @@
-import { inferAssetType, normalizeImportedHolding } from "@/lib/portfolio/position-normalizer"
+import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
 import type { BrokerApiCredentials } from "@/types/integrations"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
@@ -11,11 +11,6 @@ const DEFAULT_ETORO_DEMO_PNL_PATH = "/api/v1/trading/info/demo/pnl"
 const DEFAULT_ETORO_TRADE_HISTORY_PATH = "/api/v1/trading/info/trade/history"
 const USD_TO_GBP_FALLBACK_RATE = 0.79
 
-// Known eToro ticker renames / aliases that differ from standard market tickers
-const ETORO_TICKER_ALIASES: Record<string, string> = {
-  GIG: "BBAI", // BigBear.ai was renamed from GigCapital4
-}
-
 /**
  * Clean an eToro ticker:
  * - Strip London Stock Exchange suffixes (.L, .l, .LSE, .LON)
@@ -23,25 +18,7 @@ const ETORO_TICKER_ALIASES: Record<string, string> = {
  * - Apply known ticker renames (e.g. GIG → BBAI)
  */
 function cleanEtoroTicker(rawTicker: string, isLseListed: boolean): string {
-  // Strip exchange suffixes like .L, .l, .LSE, .LON
-  let cleaned = rawTicker.replace(/\.(L|l|LSE|LON)$/i, "")
-
-  // Strip trailing lowercase "l" for LSE-listed instruments (e.g. "RRl" → "RR", "BPl" → "BP")
-  if (isLseListed && cleaned.length > 1 && cleaned.endsWith("l") && cleaned[cleaned.length - 2] !== cleaned[cleaned.length - 2]?.toLowerCase()) {
-    cleaned = cleaned.slice(0, -1)
-  }
-  // More general: if it ends with lowercase "l" and the rest is uppercase, strip it
-  if (cleaned.length > 1 && cleaned.endsWith("l") && /^[A-Z]+$/.test(cleaned.slice(0, -1))) {
-    cleaned = cleaned.slice(0, -1)
-  }
-
-  // Apply known ticker aliases
-  const upper = cleaned.toUpperCase()
-  if (ETORO_TICKER_ALIASES[upper]) {
-    return ETORO_TICKER_ALIASES[upper]
-  }
-
-  return cleaned
+  return normalizeTickerSymbol(rawTicker, { isLseListed })
 }
 
 type EtoroApiRow = Record<string, unknown>
@@ -235,10 +212,6 @@ function getEtoroCurrencyInfo(value: string | null): {
     currency: null as PortfolioPosition["nativeCurrency"] | null,
     priceScale: "standard" as const,
   }
-}
-
-function normalizeCurrency(value: string | null): PortfolioPosition["nativeCurrency"] | null {
-  return getEtoroCurrencyInfo(value).currency
 }
 
 function normalizeEtoroPrice(value: number, priceScale: EtoroInstrumentMetadata["priceScale"]) {
@@ -834,8 +807,6 @@ function mapEtoroRowToPosition(
     "Quantity",
     "units",
     "Units",
-    "amount",
-    "Amount",
     "shares",
     "Shares",
     "openUnits",

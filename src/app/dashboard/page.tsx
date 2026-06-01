@@ -198,7 +198,13 @@ function DashboardContent() {
             onFocusAlerts={() => setFilters((current) => ({ ...current, plStatus: "near-alert" }))}
           />
 
-          <FilterBar filters={filters} availableBrokers={availableBrokers} onFiltersChange={setFilters} />
+          <FilterBar
+            filters={filters}
+            availableBrokers={availableBrokers}
+            resultCount={filteredPortfolio.length}
+            totalCount={portfolio.length}
+            onFiltersChange={setFilters}
+          />
 
           <PortfolioCharts insights={filteredInsights} onHighlightAsset={setHighlightedTicker} />
           <PortfolioTable

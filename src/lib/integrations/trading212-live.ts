@@ -1,4 +1,4 @@
-import { inferAssetType, normalizeImportedHolding } from "@/lib/portfolio/position-normalizer"
+import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
 import type { BrokerApiCredentials } from "@/types/integrations"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
@@ -148,33 +148,70 @@ function extractTrading212Rows(payload: unknown): Trading212ApiRow[] {
 function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | null {
   const ticker = getStringValue(row, ["instrument.ticker", "ticker", "symbol", "instrumentCode", "isin", "instrument.isin"])
   const shares = getNumberValue(row, ["quantity", "ownedQuantity", "qty", "shares"])
+  const walletCurrency = normalizeCurrency(getStringValue(row, ["walletImpact.currency", "accountCurrency"]))
   const totalCost = getNumberValue(row, ["walletImpact.totalCost"])
   const currentValue = getNumberValue(row, ["walletImpact.currentValue"])
   const averagePrice = getNumberValue(row, ["averagePricePaid", "averagePrice", "avgPrice", "priceAvg", "weightedAveragePrice"])
-    ?? (shares && shares > 0 && totalCost !== null ? totalCost / shares : null)
+    ?? (shares && shares > 0 && totalCost !== null && walletCurrency === null ? totalCost / shares : null)
   const livePrice = getNumberValue(row, ["currentPrice", "price", "lastPrice", "marketPrice", "closePrice"])
-    ?? (shares && shares > 0 && currentValue !== null ? currentValue / shares : null)
+    ?? (shares && shares > 0 && currentValue !== null && walletCurrency === null ? currentValue / shares : null)
   const companyName = getStringValue(row, ["instrument.name", "name", "instrumentName", "displayName", "shortName"])
-  const currency = normalizeCurrency(getStringValue(row, ["walletImpact.currency", "currencyCode", "currency", "instrument.currency", "instrumentCurrency", "instrumentCurrencyCode"]))
+  const currency = normalizeCurrency(getStringValue(row, ["currencyCode", "currency", "instrument.currency", "instrumentCurrency", "instrumentCurrencyCode", "instrument.currencyCode"]))
   const recentChange = getNumberValue(row, ["currentPriceChange", "priceChange", "todayChange", "recentChange"]) ?? 0
+  const explicitTotalPlValue = getNumberValue(row, [
+    "walletImpact.result",
+    "walletImpact.totalProfit",
+    "walletImpact.profit",
+    "walletImpact.unrealizedProfit",
+    "unrealizedProfit",
+    "unrealisedProfit",
+    "profit",
+    "ppl",
+  ])
+  const explicitTotalPlPercentValue = getNumberValue(row, [
+    "walletImpact.resultCoef",
+    "walletImpact.profitPercentage",
+    "profitPercentage",
+    "pplPercent",
+  ])
 
   if (!ticker || shares === null || averagePrice === null || livePrice === null || !currency || shares <= 0) {
     return null
   }
 
   const resolvedCompanyName = companyName ?? ticker
-  const cleanTicker = ticker.replace(/_US_EQ$|_EQ$|_GB_EQ$|p_EQ$/i, "").replace(/\.(L|LSE|LON)$/i, "")
+  const nativeTotalValue = shares * livePrice
+  const walletValueIsGbp = walletCurrency === "GBP" && currentValue !== null
+  const fxRateToGbp = walletValueIsGbp && nativeTotalValue > 0
+    ? Math.abs(currentValue) / nativeTotalValue
+    : currency === "GBP"
+      ? 1
+      : undefined
+  const explicitTotalPlGbp = explicitTotalPlValue === null
+    ? undefined
+    : walletCurrency === "GBP"
+      ? explicitTotalPlValue
+      : walletCurrency === currency
+        ? explicitTotalPlValue * (fxRateToGbp ?? (currency === "GBP" ? 1 : USD_TO_GBP_FALLBACK_RATE))
+        : undefined
 
   return normalizeImportedHolding({
     broker: "t212",
     brokerLabel: "Trading 212",
-    ticker: cleanTicker,
+    ticker,
     companyName: resolvedCompanyName,
     shares,
     avgPrice: averagePrice,
     livePrice: livePrice ?? averagePrice,
     nativeCurrency: currency,
     assetType: normalizeTrading212AssetType(row, resolvedCompanyName),
+    fxRateToGbp,
+    totalPL: explicitTotalPlGbp,
+    totalPLPercent: explicitTotalPlPercentValue === null
+      ? undefined
+      : Math.abs(explicitTotalPlPercentValue) <= 1
+        ? explicitTotalPlPercentValue * 100
+        : explicitTotalPlPercentValue,
     recentChange,
   })
 }
@@ -342,7 +379,7 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
     timestamp,
     broker: "t212",
     brokerLabel: "Trading 212",
-    ticker: ticker.replace(/_US_EQ$|_EQ$|_GB_EQ$|p_EQ$/i, "").replace(/\.(L|LSE|LON)$/i, ""),
+    ticker: normalizeTickerSymbol(ticker),
     companyName: companyName ?? ticker,
     type: normalizeTrading212ActivityType(row, rawQuantity ?? quantity),
     shares: quantity,

@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
@@ -40,11 +40,6 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
 
   const groups = useMemo(() => groupPositions(portfolio, groupBy), [portfolio, groupBy])
 
-  useEffect(() => {
-    setExpandedId(null)
-    setCollapsedGroups(new Set())
-  }, [portfolio, groupBy])
-
   function toggleGroup(key: string) {
     setCollapsedGroups(prev => {
       const next = new Set(prev)
@@ -60,7 +55,11 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
         <CardTitle className="text-base">Holdings ({portfolio.length})</CardTitle>
         <select
           value={groupBy}
-          onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+          onChange={(e) => {
+            setGroupBy(e.target.value as GroupBy)
+            setExpandedId(null)
+            setCollapsedGroups(new Set())
+          }}
           className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
         >
           <option value="none">No grouping</option>

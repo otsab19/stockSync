@@ -6,19 +6,38 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import type { BrokerId, CurrencyMode } from "@/types/portfolio"
+import type { AssetType, BrokerId, CurrencyMode } from "@/types/portfolio"
 import { defaultFilterState, type FilterState } from "@/lib/dashboard/filter-engine"
 
 interface FilterBarProps {
   filters: FilterState
   availableBrokers: Array<{ broker: BrokerId; label: string }>
+  resultCount: number
+  totalCount: number
   onFiltersChange: (next: FilterState) => void
 }
 
 const plFilters: FilterState["plStatus"][] = ["all", "profitable", "unprofitable", "near-alert", "top-gainers", "top-losers"]
 const sortByOptions: FilterState["sortBy"][] = ["value", "pl_absolute", "pl_percentage", "ticker"]
 const currencyModes: CurrencyMode[] = ["native", "normalized_gbp"]
+const assetTypes: Array<"all" | AssetType> = ["all", "stock", "etf", "crypto"]
 const fieldClasses = "w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none transition focus:border-primary/30"
+
+const plFilterLabels: Record<FilterState["plStatus"], string> = {
+  all: "All P/L",
+  profitable: "Profitable",
+  unprofitable: "Loss-making",
+  "near-alert": "Near alert",
+  "top-gainers": "Up today",
+  "top-losers": "Down today",
+}
+
+const sortLabels: Record<FilterState["sortBy"], string> = {
+  value: "Value",
+  pl_absolute: "P/L amount",
+  pl_percentage: "P/L %",
+  ticker: "Ticker",
+}
 
 function hasActiveFilters(filters: FilterState) {
   return (
@@ -32,7 +51,7 @@ function hasActiveFilters(filters: FilterState) {
   )
 }
 
-export function FilterBar({ filters, availableBrokers, onFiltersChange }: FilterBarProps) {
+export function FilterBar({ filters, availableBrokers, resultCount, totalCount, onFiltersChange }: FilterBarProps) {
   const [isCommandOpen, setIsCommandOpen] = useState(false)
   const activeFilters = hasActiveFilters(filters)
 
@@ -64,7 +83,9 @@ export function FilterBar({ filters, availableBrokers, onFiltersChange }: Filter
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <CardTitle>Filter holdings</CardTitle>
-          <CardDescription>Search, sort, and focus the positions currently loaded in the dashboard.</CardDescription>
+          <CardDescription>
+            Showing {resultCount} of {totalCount} holding{totalCount === 1 ? "" : "s"}. Search, sort, and focus the dashboard.
+          </CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {activeFilters ? (
@@ -106,9 +127,10 @@ export function FilterBar({ filters, availableBrokers, onFiltersChange }: Filter
           {activeFilters ? (
             <>
               {filters.searchQuery.trim() ? <Badge variant="outline">Search: {filters.searchQuery.trim()}</Badge> : null}
-              {filters.plStatus !== "all" ? <Badge variant="outline">P/L: {filters.plStatus.replace(/-/g, " ")}</Badge> : null}
+              {filters.plStatus !== "all" ? <Badge variant="outline">P/L: {plFilterLabels[filters.plStatus]}</Badge> : null}
+              {filters.assetType !== "all" ? <Badge variant="outline">Type: {filters.assetType.toUpperCase()}</Badge> : null}
               {filters.brokers.map((broker) => (
-                <Badge key={broker} variant="outline">Broker: {broker}</Badge>
+                <Badge key={broker} variant="outline">Broker: {availableBrokers.find((entry) => entry.broker === broker)?.label ?? broker}</Badge>
               ))}
               {filters.currencyMode !== defaultFilterState.currencyMode ? (
                 <Badge variant="outline">Currency: {filters.currencyMode === "native" ? "Native" : "GBP"}</Badge>
@@ -142,7 +164,7 @@ export function FilterBar({ filters, availableBrokers, onFiltersChange }: Filter
             >
               {plFilters.map((value) => (
                 <option key={value} value={value}>
-                  {value.replace(/-/g, " ")}
+                  {plFilterLabels[value]}
                 </option>
               ))}
             </select>
@@ -158,7 +180,7 @@ export function FilterBar({ filters, availableBrokers, onFiltersChange }: Filter
               >
                 {sortByOptions.map((value) => (
                   <option key={value} value={value}>
-                    {value.replace(/_/g, " ")}
+                    {sortLabels[value]}
                   </option>
                 ))}
               </select>
@@ -219,6 +241,22 @@ export function FilterBar({ filters, availableBrokers, onFiltersChange }: Filter
                 onClick={() => toggleBroker(entry.broker)}
               >
                 {entry.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="text-sm font-medium">Asset type</div>
+          <div className="flex flex-wrap gap-2">
+            {assetTypes.map((assetType) => (
+              <Button
+                key={assetType}
+                size="sm"
+                variant={filters.assetType === assetType ? "default" : "outline"}
+                onClick={() => onFiltersChange({ ...filters, assetType })}
+              >
+                {assetType === "all" ? "All types" : assetType.toUpperCase()}
               </Button>
             ))}
           </div>

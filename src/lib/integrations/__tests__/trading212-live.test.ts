@@ -50,6 +50,50 @@ describe("Trading 212 live mapper", () => {
     expect(positions[0].normalizedTotalValueGbp).toBe(632)
   })
 
+  it("uses instrument currency and wallet value to match GBP account valuation", () => {
+    const payload = [
+      {
+        ticker: "AAPL_US_EQ",
+        quantity: 5,
+        averagePricePaid: 150,
+        currentPrice: 160,
+        currencyCode: "USD",
+        walletImpact: {
+          currency: "GBP",
+          currentValue: 620,
+          result: 38.75,
+        },
+        name: "Apple Inc.",
+      },
+    ]
+
+    const positions = mapTrading212PortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0].ticker).toBe("AAPL")
+    expect(positions[0].nativeCurrency).toBe("USD")
+    expect(positions[0].fxRateToGbp).toBeCloseTo(0.775, 3)
+    expect(positions[0].normalizedTotalValueGbp).toBeCloseTo(620, 2)
+    expect(positions[0].totalPL).toBeCloseTo(38.75, 2)
+  })
+
+  it("normalizes pence ticker suffixes before generic exchange suffixes", () => {
+    const payload = [
+      {
+        ticker: "VODp_EQ",
+        quantity: 100,
+        averagePricePaid: 0.7,
+        currentPrice: 0.75,
+        currencyCode: "GBP",
+        name: "Vodafone",
+      },
+    ]
+
+    const positions = mapTrading212PortfolioResponse(payload)
+
+    expect(positions[0].ticker).toBe("VOD")
+  })
+
   it("throws when positions have zero shares (safeguard)", () => {
     const payload = [
       {
