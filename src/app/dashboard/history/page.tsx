@@ -114,37 +114,39 @@ function dedupeActivityEvents(activity: PortfolioActivityEvent[]) {
   })
 }
 
-function buildHistoryVolumeStats(activity: PortfolioActivityEvent[]) {
+function buildHistoryInvestmentStats(activity: PortfolioActivityEvent[]) {
   const events = dedupeActivityEvents(activity)
   const etoroPositionIds = new Set<string>()
-  let buyVolumeGbp = 0
-  let sellVolumeGbp = 0
-  let buyCount = 0
-  let sellCount = 0
+  let totalInvestedGbp = 0
+  let totalReturnedGbp = 0
   let nonEtoroTradeCount = 0
 
   events.forEach((event) => {
     if (event.broker === "etoro") {
       const positionId = event.id.split(":")[1]
       if (positionId) etoroPositionIds.add(positionId)
-    } else {
-      nonEtoroTradeCount += 1
+
+      if (event.orderType === "Open") {
+        totalInvestedGbp += event.grossAmountGbp
+      } else if (event.orderType === "Close") {
+        totalReturnedGbp += event.grossAmountGbp
+      }
+      return
     }
 
+    nonEtoroTradeCount += 1
+
     if (event.type === "buy") {
-      buyVolumeGbp += event.grossAmountGbp
-      buyCount += 1
+      totalInvestedGbp += event.grossAmountGbp
     } else {
-      sellVolumeGbp += event.grossAmountGbp
-      sellCount += 1
+      totalReturnedGbp += event.grossAmountGbp
     }
   })
 
   return {
-    buyVolumeGbp,
-    sellVolumeGbp,
-    buyCount,
-    sellCount,
+    totalInvestedGbp,
+    totalReturnedGbp,
+    netInvestedGbp: totalInvestedGbp - totalReturnedGbp,
     completedTradeCount: etoroPositionIds.size + nonEtoroTradeCount,
     orderLegCount: events.length,
   }
@@ -472,7 +474,7 @@ export default function DashboardHistoryPage() {
       : []
     return dedupeActivityEvents(activity)
   }, [portfolioResponse])
-  const volumeStats = useMemo(() => buildHistoryVolumeStats(rawActivity), [rawActivity])
+  const volumeStats = useMemo(() => buildHistoryInvestmentStats(rawActivity), [rawActivity])
   const availableBrokers = useMemo(
     () => Array.from(new Map<BrokerId, { broker: BrokerId; label: string }>([
       ...portfolio.map((p) => [p.broker, { broker: p.broker, label: p.brokerLabel }] as const),
@@ -525,26 +527,29 @@ export default function DashboardHistoryPage() {
   const bestTrade = displayActivity.length > 0 ? displayActivity.reduce((best, e) => e.grossAmountGbp > best.grossAmountGbp ? e : best) : null
   const worstTrade = displayActivity.length > 0 ? displayActivity.reduce((worst, e) => e.grossAmountGbp < worst.grossAmountGbp ? e : worst) : null
 
-  const totalBuyValueGbp = displayActivity.filter((e) => e.type === "buy").reduce((sum, e) => sum + e.grossAmountGbp, 0)
-  const totalSellValueGbp = displayActivity.filter((e) => e.type === "sell").reduce((sum, e) => sum + e.grossAmountGbp, 0)
-  const filteredBuyCount = displayActivity.filter((e) => e.type === "buy").length
-  const filteredSellCount = displayActivity.filter((e) => e.type === "sell").length
+  const investmentStats = useMemo(() => buildHistoryInvestmentStats(displayActivity), [displayActivity])
 
   // Realized P&L: prefer explicit realisedProfitGbp from broker (T212 provides this on sells)
   // Fall back to per-ticker net for tickers with both buys and sells
   const realisedPL = (() => {
-    // First try: sum explicit realisedProfitGbp from sell events
     const explicitPL = displayActivity
       .filter((e) => e.realisedProfitGbp !== undefined)
       .reduce((sum, e) => sum + (e.realisedProfitGbp ?? 0), 0)
 
     if (explicitPL !== 0) return explicitPL
 
-    // Fallback: per-ticker net P&L for tickers with both buys AND sells (completed round-trips)
     return tickerSummaries
       .filter((s) => s.buyCount > 0 && s.sellCount > 0)
       .reduce((sum, s) => sum + s.netPLGbp, 0)
   })()
+
+  const displayTotalReturnGbp = realisedPL
+  const displayNetInvestedGbp = investmentStats.netInvestedGbp
+  const returnOnInvestedPercent = displayNetInvestedGbp > 0
+    ? (displayTotalReturnGbp / displayNetInvestedGbp) * 100
+    : investmentStats.totalInvestedGbp > 0
+      ? (displayTotalReturnGbp / investmentStats.totalInvestedGbp) * 100
+      : 0
 
   const avgTradeSizeGbp = displayActivity.length === 0 ? 0 : displayActivity.reduce((sum, e) => sum + e.grossAmountGbp, 0) / displayActivity.length
 
@@ -571,19 +576,21 @@ export default function DashboardHistoryPage() {
       {/* KPI Strip */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Realised P&L</p>
-          <p className={`mt-2 text-2xl font-semibold tracking-tight ${realisedPL >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatSignedMoney(realisedPL)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">From completed trades</p>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total invested</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(displayNetInvestedGbp, "GBP")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Net capital in open trades</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Buy volume</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(totalBuyValueGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{filteredBuyCount} buy leg{filteredBuyCount === 1 ? "" : "s"} · cumulative across re-buys</p>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total return</p>
+          <p className={`mt-2 text-2xl font-semibold tracking-tight ${displayTotalReturnGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatSignedMoney(displayTotalReturnGbp)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Realised profit or loss</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Sell volume</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(totalSellValueGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{filteredSellCount} sell leg{filteredSellCount === 1 ? "" : "s"} · cumulative across exits</p>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Return %</p>
+          <p className={`mt-2 text-2xl font-semibold tracking-tight ${returnOnInvestedPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {returnOnInvestedPercent >= 0 ? "+" : ""}{returnOnInvestedPercent.toFixed(1)}%
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">On net invested capital</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Completed trades</p>
