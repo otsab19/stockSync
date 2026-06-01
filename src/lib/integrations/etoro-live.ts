@@ -422,7 +422,7 @@ function getEtoroTradeHistoryPaths() {
     return [DEFAULT_ETORO_DEMO_TRADE_HISTORY_PATH]
   }
 
-  return [DEFAULT_ETORO_REAL_TRADE_HISTORY_PATH, LEGACY_ETORO_TRADE_HISTORY_PATH]
+  return [LEGACY_ETORO_TRADE_HISTORY_PATH, DEFAULT_ETORO_REAL_TRADE_HISTORY_PATH]
 }
 
 function getEtoroActivityType(isBuy: boolean, phase: EtoroActivityPhase) {
@@ -467,8 +467,8 @@ function getEtoroHistoryUnits(row: EtoroApiRow, phase: EtoroActivityPhase) {
 
 function deriveEtoroHistoryGrossAmount(row: EtoroApiRow, phase: EtoroActivityPhase, price: number, leverage: number) {
   const amount = getNumberValue(row, phase === "open"
-    ? ["amount", "Amount", "openAmount", "OpenAmount", "investedAmount", "InvestedAmount", "requestedAmount", "RequestedAmount"]
-    : ["closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
+    ? ["investment", "Investment", "initialInvestment", "InitialInvestment", "amount", "Amount", "openAmount", "OpenAmount", "investedAmount", "InvestedAmount", "requestedAmount", "RequestedAmount"]
+    : ["investment", "Investment", "initialInvestment", "InitialInvestment", "closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
 
   if (amount !== null) {
     return Math.abs(amount)
@@ -544,8 +544,8 @@ function createEtoroActivityEvent(
   // IMPORTANT: for close phase, do NOT fall back to "amount"/"Amount" — that's the OPEN invested amount.
   // Only use close-specific fields (closeAmount, closedAmount, proceeds, realizedAmount).
   const explicitAmount = getNumberValue(normalizedRow, phase === "open"
-    ? ["amount", "Amount", "openAmount", "OpenAmount", "investedAmount", "InvestedAmount", "requestedAmount", "RequestedAmount"]
-    : ["closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
+    ? ["investment", "Investment", "initialInvestment", "InitialInvestment", "amount", "Amount", "openAmount", "OpenAmount", "investedAmount", "InvestedAmount", "requestedAmount", "RequestedAmount"]
+    : ["investment", "Investment", "initialInvestment", "InitialInvestment", "closeAmount", "CloseAmount", "closedAmount", "ClosedAmount", "proceeds", "Proceeds", "realizedAmount", "RealizedAmount"])
 
   let grossAmount: number | null
   if (explicitAmount !== null) {
@@ -1416,10 +1416,19 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
     throw new Error(`Failed to load eToro trade history. Tried: ${attemptedResponses.join("; ")}`)
   }
 
+  if (historyRows.length === 0) {
+    throw new Error("eToro trade history returned no rows from the documented history endpoints.")
+  }
+
   const instrumentIds = Array.from(new Set(historyRows
     .map((row) => getEtoroInstrumentId(row as unknown as EtoroApiRow))
     .filter((value): value is number => value !== null)))
-  const metadataByInstrumentId = await fetchEtoroInstrumentMetadata(baseUrl, headers, instrumentIds)
+  let metadataByInstrumentId: Map<number, EtoroInstrumentMetadata> = new Map()
+  try {
+    metadataByInstrumentId = await fetchEtoroInstrumentMetadata(baseUrl, headers, instrumentIds)
+  } catch (error) {
+    logger.warn({ broker: "etoro", error: getErrorLogDetails(error), instrumentIds: instrumentIds.length }, "eToro history metadata enrichment failed; continuing with instrument IDs")
+  }
 
   // Also fetch live rates to help detect pence-priced instruments
   // If an instrument's live rate is >200 and metadata says "USD", it's almost certainly GBX
