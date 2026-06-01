@@ -824,6 +824,18 @@ function collectNestedRecords(value: unknown): EtoroApiRow[] {
   return []
 }
 
+function hasKnownPositionContainer(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  if (ETORO_POSITION_CONTAINER_KEYS.some((key) => Array.isArray(value[key]))) {
+    return true
+  }
+
+  return Object.values(value).some((nestedValue) => isRecord(nestedValue) && hasKnownPositionContainer(nestedValue))
+}
+
 function extractEtoroRows(payload: unknown): EtoroApiRow[] {
   if (Array.isArray(payload)) {
     return payload.filter(isRecord)
@@ -845,7 +857,15 @@ function extractEtoroRows(payload: unknown): EtoroApiRow[] {
     return topLevelRows
   }
 
+  if (hasKnownPositionContainer(payload)) {
+    return []
+  }
+
   throw new Error("eToro returned an unexpected portfolio payload.")
+}
+
+function isExplicitNonLongPositionRow(row: EtoroApiRow) {
+  return getBooleanValue(row, ["isBuy", "IsBuy", "direction", "Direction"]) === false
 }
 
 function mapEtoroRowToPosition(
@@ -1068,6 +1088,10 @@ export function mapEtoroPortfolioResponse(payload: unknown): PortfolioPosition[]
   const positions = mapEtoroRowsToPositions(rows)
 
   if (rows.length > 0 && positions.length === 0) {
+    if (rows.every(isExplicitNonLongPositionRow)) {
+      return []
+    }
+
     const sampleKeys = Object.keys(rows[0] ?? {}).slice(0, 12).join(", ") || "unknown"
     throw new Error(
       `eToro responded successfully, but none of the returned positions matched the portfolio fields this app currently supports. Sample row keys: ${sampleKeys}. If eToro changed its payload shape, update the live mapper or configure ETORO_PORTFOLIO_PATHS for the correct positions endpoint.`
@@ -1131,6 +1155,10 @@ export async function fetchEtoroPortfolioFromApi(credentials?: string | BrokerAp
     logger.info({ broker: "etoro", positions: positions.length }, "Mapped eToro portfolio positions")
 
     if (rows.length > 0 && positions.length === 0) {
+      if (rows.every(isExplicitNonLongPositionRow)) {
+        return []
+      }
+
       const sampleKeys = Object.keys(rows[0] ?? {}).slice(0, 12).join(", ") || "unknown"
       logger.warn({ broker: "etoro", sampleKeys }, "eToro portfolio rows loaded but none mapped into positions")
       throw new Error(`eToro responded successfully, but none of the returned positions matched the portfolio fields this app currently supports. Sample row keys: ${sampleKeys}.`)

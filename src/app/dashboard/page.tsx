@@ -126,8 +126,8 @@ function DashboardContent() {
     }
 
     const baseActivity = portfolioResponse.activity ?? portfolioResponse.insights.activity
-    return filterActivity(baseActivity, filteredPortfolio)
-  }, [filteredPortfolio, portfolioResponse])
+    return hasInsightAffectingFilters(filters) ? filterActivity(baseActivity, filteredPortfolio) : baseActivity
+  }, [filteredPortfolio, filters, portfolioResponse])
   const filteredInsights = useMemo(() => {
     const baseInsights = portfolioResponse?.status === "ok" ? portfolioResponse.insights : null
 

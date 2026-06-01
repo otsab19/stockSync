@@ -9,6 +9,20 @@ type RecordSyncBody = {
   activity?: PortfolioActivityEvent[]
 }
 
+type DeleteBuilder = PromiseLike<unknown> & {
+  eq(column: string, value: unknown): DeleteBuilder
+}
+
+type TableWriter = {
+  upsert(values: unknown, options?: unknown): PromiseLike<unknown>
+  insert(values: unknown): PromiseLike<unknown>
+  delete(): DeleteBuilder
+}
+
+type SupabaseWriter = {
+  from(table: string): TableWriter
+}
+
 export async function POST(request: Request) {
   if (getConfiguredBackend() !== "supabase") {
     return NextResponse.json({ message: "ok" })
@@ -32,8 +46,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "broker and positions required." }, { status: 400 })
   }
 
+  const writer = supabase as unknown as SupabaseWriter
+  const now = new Date().toISOString()
+
   // 1. Upsert broker_connection
-  await (supabase.from("broker_connections") as any).upsert(
+  await writer.from("broker_connections").upsert(
     {
       user_id: user.id,
       broker,
@@ -41,27 +58,27 @@ export async function POST(request: Request) {
       sync_mode: "manual",
       sync_status: "succeeded",
       is_enabled: true,
-      last_synced_at: new Date().toISOString(),
+      last_synced_at: now,
       last_error: null,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     },
     { onConflict: "user_id,broker,source_type" }
   )
 
   // 2. Insert sync_run
-  await (supabase.from("sync_runs") as any).insert({
+  await writer.from("sync_runs").insert({
     user_id: user.id,
     broker,
     trigger: "manual",
     source_type: "broker_api",
     status: "succeeded",
     positions_imported: positions.length,
-    started_at: new Date().toISOString(),
-    finished_at: new Date().toISOString(),
+    started_at: now,
+    finished_at: now,
   })
 
   // 3. Replace positions for this broker
-  await (supabase.from("positions") as any).delete().eq("user_id", user.id).eq("broker", broker)
+  await writer.from("positions").delete().eq("user_id", user.id).eq("broker", broker)
 
   if (positions.length > 0) {
     const positionRows = positions.map((p) => ({
@@ -77,34 +94,35 @@ export async function POST(request: Request) {
       total_value_gbp: p.normalizedTotalValueGbp,
       total_pl: p.totalPL,
       total_pl_percent: p.totalPLPercent,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     }))
-    await (supabase.from("positions") as any).insert(positionRows)
+    await writer.from("positions").insert(positionRows)
   }
 
-  // 4. Upsert activity events for this broker
-  if (activity && activity.length > 0) {
-    // Delete existing activity for this broker, then insert fresh
-    await (supabase.from("activity_events") as any).delete().eq("user_id", user.id).eq("broker", broker)
+  // 4. Replace activity events for this broker when a fresh payload was provided
+  if (activity) {
+    await writer.from("activity_events").delete().eq("user_id", user.id).eq("broker", broker)
 
-    const activityRows = activity.map((a) => ({
-      user_id: user.id,
-      broker: a.broker,
-      ticker: a.ticker,
-      company_name: a.companyName,
-      event_type: a.type,
-      shares: a.shares,
-      price: a.price,
-      native_currency: a.nativeCurrency,
-      gross_amount_gbp: a.grossAmountGbp,
-      realised_profit_gbp: a.realisedProfitGbp ?? null,
-      order_type: a.orderType ?? null,
-      timestamp: a.timestamp,
-    }))
+    if (activity.length > 0) {
+      const activityRows = activity.map((a) => ({
+        user_id: user.id,
+        broker: a.broker,
+        ticker: a.ticker,
+        company_name: a.companyName,
+        event_type: a.type,
+        shares: a.shares,
+        price: a.price,
+        native_currency: a.nativeCurrency,
+        gross_amount_gbp: a.grossAmountGbp,
+        realised_profit_gbp: a.realisedProfitGbp ?? null,
+        order_type: a.orderType ?? null,
+        timestamp: a.timestamp,
+      }))
 
-    // Insert in batches of 100
-    for (let i = 0; i < activityRows.length; i += 100) {
-      await (supabase.from("activity_events") as any).insert(activityRows.slice(i, i + 100))
+      // Insert in batches of 100
+      for (let i = 0; i < activityRows.length; i += 100) {
+        await writer.from("activity_events").insert(activityRows.slice(i, i + 100))
+      }
     }
   }
 

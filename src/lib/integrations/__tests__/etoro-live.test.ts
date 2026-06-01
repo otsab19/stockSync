@@ -107,7 +107,17 @@ describe("eToro live mapper", () => {
     expect(positions.map((position) => position.ticker)).toEqual(["RR", "BBAI"])
   })
 
-  it("throws for short positions (isBuy=false) when no long positions exist", () => {
+  it("returns an empty portfolio when eToro has no open positions", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [],
+      },
+    }
+
+    expect(mapEtoroPortfolioResponse(payload)).toEqual([])
+  })
+
+  it("returns an empty portfolio for short-only position rows", () => {
     const payload = {
       clientPortfolio: {
         positions: [
@@ -124,7 +134,7 @@ describe("eToro live mapper", () => {
       },
     }
 
-    expect(() => mapEtoroPortfolioResponse(payload)).toThrow()
+    expect(mapEtoroPortfolioResponse(payload)).toEqual([])
   })
 })
 

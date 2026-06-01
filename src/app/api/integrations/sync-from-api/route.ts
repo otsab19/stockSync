@@ -7,6 +7,20 @@ import { createClient } from "@/utils/supabase/server"
 import type { BrowserApiSyncRequest, BrowserApiSyncResponse } from "@/types/integrations"
 import type { BrokerId, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 
+type DeleteBuilder = PromiseLike<unknown> & {
+  eq(column: string, value: unknown): DeleteBuilder
+}
+
+type TableWriter = {
+  upsert(values: unknown, options?: unknown): PromiseLike<unknown>
+  insert(values: unknown): PromiseLike<unknown>
+  delete(): DeleteBuilder
+}
+
+type SupabaseWriter = {
+  from(table: string): TableWriter
+}
+
 function normalizeBrokerId(value: unknown): BrokerId | null {
   return typeof value === "string" && value.trim() ? (value.trim() as BrokerId) : null
 }
@@ -111,9 +125,10 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
   if (!user) return
 
   const now = new Date().toISOString()
+  const writer = supabase as unknown as SupabaseWriter
 
   // Upsert broker_connection
-  await (supabase.from("broker_connections") as any).upsert(
+  await writer.from("broker_connections").upsert(
     {
       user_id: user.id,
       broker,
@@ -129,7 +144,7 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
   )
 
   // Insert sync_run
-  await (supabase.from("sync_runs") as any).insert({
+  await writer.from("sync_runs").insert({
     user_id: user.id,
     broker,
     trigger: "manual",
@@ -141,9 +156,9 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
   })
 
   // Replace positions
-  await (supabase.from("positions") as any).delete().eq("user_id", user.id).eq("broker", broker)
+  await writer.from("positions").delete().eq("user_id", user.id).eq("broker", broker)
   if (positions.length > 0) {
-    await (supabase.from("positions") as any).insert(
+    await writer.from("positions").insert(
       positions.map((p) => ({
         user_id: user.id,
         broker: p.broker,
@@ -162,26 +177,29 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
     )
   }
 
-  // Replace activity
-  if (activity && activity.length > 0) {
-    await (supabase.from("activity_events") as any).delete().eq("user_id", user.id).eq("broker", broker)
-    for (let i = 0; i < activity.length; i += 100) {
-      await (supabase.from("activity_events") as any).insert(
-        activity.slice(i, i + 100).map((a) => ({
-          user_id: user.id,
-          broker: a.broker,
-          ticker: a.ticker,
-          company_name: a.companyName,
-          event_type: a.type,
-          shares: a.shares,
-          price: a.price,
-          native_currency: a.nativeCurrency,
-          gross_amount_gbp: a.grossAmountGbp,
-          realised_profit_gbp: a.realisedProfitGbp ?? null,
-          order_type: a.orderType ?? null,
-          timestamp: a.timestamp,
-        }))
-      )
+  // Replace activity when a fresh activity payload was requested, even if it is empty.
+  if (activity) {
+    await writer.from("activity_events").delete().eq("user_id", user.id).eq("broker", broker)
+
+    if (activity.length > 0) {
+      for (let i = 0; i < activity.length; i += 100) {
+        await writer.from("activity_events").insert(
+          activity.slice(i, i + 100).map((a) => ({
+            user_id: user.id,
+            broker: a.broker,
+            ticker: a.ticker,
+            company_name: a.companyName,
+            event_type: a.type,
+            shares: a.shares,
+            price: a.price,
+            native_currency: a.nativeCurrency,
+            gross_amount_gbp: a.grossAmountGbp,
+            realised_profit_gbp: a.realisedProfitGbp ?? null,
+            order_type: a.orderType ?? null,
+            timestamp: a.timestamp,
+          }))
+        )
+      }
     }
   }
 }
