@@ -1,10 +1,14 @@
 import type { PortfolioApiResponse } from "@/types/portfolio"
 import { replaceBrowserPortfolioInIndexedDb } from "@/lib/portfolio/browser-indexeddb"
-import type { ClientPortfolioRepository } from "@/lib/portfolio/repository"
+import type { ClientPortfolioRepository, ClientPortfolioRequestOptions } from "@/lib/portfolio/repository"
 
 export class HttpApiPortfolioRepository implements ClientPortfolioRepository {
-  async getPortfolio(): Promise<PortfolioApiResponse> {
-    const response = await fetch("/api/portfolio", { cache: "no-store" })
+  async getPortfolio(options: ClientPortfolioRequestOptions = {}): Promise<PortfolioApiResponse> {
+    const params = new URLSearchParams()
+    if (options.refresh) params.set("refresh", "true")
+    if (options.includeActivity) params.set("includeActivity", "true")
+
+    const response = await fetch(`/api/portfolio${params.size > 0 ? `?${params.toString()}` : ""}`, { cache: "no-store" })
     const data = (await response.json()) as PortfolioApiResponse
 
     if (data.status === "ok") {
