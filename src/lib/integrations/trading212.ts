@@ -45,7 +45,6 @@ export const trading212Provider: BrokerProvider = {
 
       return {
         positions,
-        activity: [],
         message: "Trading 212 positions refreshed, but trade history hit the broker rate limit. Try refreshing history again in a minute.",
       }
     }

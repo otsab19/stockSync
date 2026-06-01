@@ -35,7 +35,6 @@ export const etoroProvider: BrokerProvider = {
 
       return {
         positions,
-        activity: [],
         message: isRateLimit
           ? "eToro positions refreshed, but trade history hit the broker rate limit. Try refreshing history again in a minute."
           : `eToro positions refreshed, but trade history failed: ${message.slice(0, 150)}`,

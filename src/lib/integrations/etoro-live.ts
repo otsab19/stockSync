@@ -712,6 +712,20 @@ function getEtoroHistoryNextPath(payload: EtoroHistoryResponse) {
   return path.startsWith("/") ? path : `/${path}`
 }
 
+function buildEtoroHistoryPath(baseHistoryPath: string, page: number, includeNames: boolean) {
+  const params = new URLSearchParams({
+    minDate: getHistoryMinDate(),
+    page: String(page),
+    pageSize: "500",
+  })
+
+  if (includeNames) {
+    params.set("includeNames", "true")
+  }
+
+  return `${baseHistoryPath}?${params.toString()}`
+}
+
 function mapEtoroSearchRowToInstrument(row: EtoroApiRow): BrokerInstrument | null {
   const instrumentId = getEtoroInstrumentId(row)
   if (instrumentId === null) {
@@ -1358,36 +1372,42 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
   let loadedHistoryPath: string | null = null
 
   for (const baseHistoryPath of getEtoroTradeHistoryPaths()) {
-    const rows: EtoroApiRow[] = []
-    let page = 1
-    let nextPath: string | null = `${baseHistoryPath}?minDate=${encodeURIComponent(getHistoryMinDate())}&page=${page}&pageSize=500&includeNames=true`
+    for (const includeNames of [true, false]) {
+      const rows: EtoroApiRow[] = []
+      let page = 1
+      let nextPath: string | null = buildEtoroHistoryPath(baseHistoryPath, page, includeNames)
 
-    while (nextPath) {
-      logger.info({ broker: "etoro", historyPath: nextPath }, "Requesting eToro trade history")
+      while (nextPath) {
+        logger.info({ broker: "etoro", historyPath: nextPath, includeNames }, "Requesting eToro trade history")
 
-      try {
-        const payload = await fetchEtoroJson<EtoroHistoryResponse>(baseUrl, nextPath, headers)
-        const pageRows = extractEtoroHistoryRows(payload)
-        rows.push(...pageRows)
+        try {
+          const payload = await fetchEtoroJson<EtoroHistoryResponse>(baseUrl, nextPath, headers)
+          const pageRows = extractEtoroHistoryRows(payload)
+          rows.push(...pageRows)
 
-        const nextPagePath = getEtoroHistoryNextPath(payload)
-        if (nextPagePath) {
-          nextPath = nextPagePath
-        } else {
-          const nextPage = getEtoroHistoryNextPage(payload, page)
-          page = nextPage ?? page
-          nextPath = nextPage ? `${baseHistoryPath}?minDate=${encodeURIComponent(getHistoryMinDate())}&page=${nextPage}&pageSize=500&includeNames=true` : null
+          const nextPagePath = getEtoroHistoryNextPath(payload)
+          if (nextPagePath) {
+            nextPath = nextPagePath
+          } else {
+            const nextPage = getEtoroHistoryNextPage(payload, page)
+            page = nextPage ?? page
+            nextPath = nextPage ? buildEtoroHistoryPath(baseHistoryPath, nextPage, includeNames) : null
+          }
+        } catch (error) {
+          attemptedResponses.push(`${nextPath} -> ${error instanceof Error ? error.message : "Unknown error"}`)
+          rows.length = 0
+          break
         }
-      } catch (error) {
-        attemptedResponses.push(`${nextPath} -> ${error instanceof Error ? error.message : "Unknown error"}`)
-        rows.length = 0
+      }
+
+      if (rows.length > 0) {
+        historyRows = rows as EtoroTradeHistoryRow[]
+        loadedHistoryPath = baseHistoryPath
         break
       }
     }
 
-    if (rows.length > 0) {
-      historyRows = rows as EtoroTradeHistoryRow[]
-      loadedHistoryPath = baseHistoryPath
+    if (loadedHistoryPath) {
       break
     }
   }
