@@ -31,6 +31,18 @@ type SnapshotRow = {
   last_alerted_pl: number
 }
 
+type StockAlertRuleRow = {
+  id: string
+  user_id: string
+  broker: "t212" | "etoro"
+  ticker: string
+  company_name: string
+  direction: "up" | "down" | "both"
+  threshold_percent: number | string
+  baseline_price: number | string
+  baseline_currency: "GBP" | "USD"
+}
+
 type DeleteBuilder = PromiseLike<unknown> & {
   eq(column: string, value: unknown): DeleteBuilder
 }
@@ -38,6 +50,7 @@ type DeleteBuilder = PromiseLike<unknown> & {
 type TableWriter = {
   upsert(values: unknown, options?: unknown): PromiseLike<unknown>
   insert(values: unknown): PromiseLike<unknown>
+  update(values: unknown): { eq(column: string, value: unknown): PromiseLike<unknown> }
   delete(): DeleteBuilder
 }
 
@@ -101,6 +114,74 @@ async function recordScheduledPositions(
       }))
     )
   }
+}
+
+function toNumber(value: number | string | null | undefined) {
+  const parsed = typeof value === "number" ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+async function evaluateStockMoveAlerts(
+  supabase: NonNullable<ReturnType<typeof createServiceRoleClient>>,
+  writer: SupabaseWriter,
+  userId: string,
+  positions: PortfolioPosition[]
+) {
+  if (positions.length === 0) {
+    return [] as Array<{ ticker: string; broker: string; title: string; body: string; tag: string }>
+  }
+
+  const { data: rules } = await supabase
+    .from("stock_alert_rules")
+    .select("id, user_id, broker, ticker, company_name, direction, threshold_percent, baseline_price, baseline_currency")
+    .eq("user_id", userId)
+    .eq("is_enabled", true) as unknown as { data: StockAlertRuleRow[] | null }
+
+  const positionMap = new Map(positions.map((position) => [`${position.broker}:${position.ticker}`, position]))
+  const triggered: Array<{ ticker: string; broker: string; title: string; body: string; tag: string }> = []
+
+  for (const rule of rules ?? []) {
+    const position = positionMap.get(`${rule.broker}:${rule.ticker}`)
+    if (!position) continue
+
+    const baselinePrice = toNumber(rule.baseline_price)
+    const thresholdPercent = toNumber(rule.threshold_percent)
+    if (baselinePrice <= 0 || thresholdPercent <= 0) continue
+
+    const changePercent = ((position.livePrice - baselinePrice) / baselinePrice) * 100
+    const movedUp = changePercent >= thresholdPercent
+    const movedDown = changePercent <= -thresholdPercent
+    const shouldTrigger = rule.direction === "both"
+      ? movedUp || movedDown
+      : rule.direction === "up"
+        ? movedUp
+        : movedDown
+
+    if (!shouldTrigger) continue
+
+    const directionLabel = changePercent >= 0 ? "up" : "down"
+    const signedPercent = `${changePercent >= 0 ? "+" : ""}${changePercent.toFixed(2)}%`
+    const title = `${position.ticker} moved ${directionLabel} ${Math.abs(changePercent).toFixed(2)}%`
+    const body = `${position.companyName} moved from ${baselinePrice.toFixed(4)} to ${position.livePrice.toFixed(4)} (${signedPercent}).`
+
+    triggered.push({
+      ticker: position.ticker,
+      broker: position.broker,
+      title,
+      body,
+      tag: `stock-alert-${rule.id}`,
+    })
+
+    await writer.from("stock_alert_rules").update({
+      baseline_price: position.livePrice,
+      baseline_currency: position.nativeCurrency,
+      last_triggered_at: new Date().toISOString(),
+      last_triggered_price: position.livePrice,
+      updated_at: new Date().toISOString(),
+    }).eq("id", rule.id)
+  }
+
+  return triggered
 }
 
 export class SupabaseAlertJobRepository implements AlertJobRepository {
@@ -197,7 +278,8 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
         (snapshots ?? []).map((s) => [`${s.ticker}:${s.broker}`, s as unknown as SnapshotRow])
       )
 
-      const triggeredAlerts: Array<{ ticker: string; broker: string; pl: number; direction: string }> = []
+      const triggeredAlerts: Array<{ ticker: string; broker: string; title: string; body: string; tag: string }> = []
+      triggeredAlerts.push(...await evaluateStockMoveAlerts(supabase, writer, profile.id, positions))
 
       for (const pos of positions) {
         const key = `${pos.ticker}:${pos.broker}`
@@ -212,7 +294,14 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
 
           if (currentBucket > lastBucket) {
             const direction = pos.totalPL > 0 ? "profit" : "loss"
-            triggeredAlerts.push({ ticker: pos.ticker, broker: pos.broker, pl: pos.totalPL, direction })
+            const sign = pos.totalPL > 0 ? "+" : "-"
+            triggeredAlerts.push({
+              ticker: pos.ticker,
+              broker: pos.broker,
+              title: `£${Math.abs(pos.totalPL).toFixed(0)} ${direction} on ${pos.ticker}`,
+              body: `${pos.ticker} (${pos.broker}) has reached ${sign}£${Math.abs(pos.totalPL).toFixed(2)} P&L.`,
+              tag: `alert-${pos.ticker}-${pos.broker}`,
+            })
 
             // Update last_alerted_pl
             await writer.from("portfolio_snapshots").upsert(
@@ -262,11 +351,10 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
 
         if (subscriptions && subscriptions.length > 0) {
           for (const alert of triggeredAlerts) {
-            const sign = alert.pl > 0 ? "+" : "-"
             const payload = JSON.stringify({
-              title: `£${Math.abs(alert.pl).toFixed(0)} ${alert.direction} on ${alert.ticker}`,
-              body: `${alert.ticker} (${alert.broker}) has reached ${sign}£${Math.abs(alert.pl).toFixed(2)} P&L.`,
-              tag: `alert-${alert.ticker}-${alert.broker}`,
+              title: alert.title,
+              body: alert.body,
+              tag: alert.tag,
               url: "/dashboard",
             })
 

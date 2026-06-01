@@ -3,6 +3,7 @@ import { PageShell } from "@/components/app/page-shell"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { NotificationToggle } from "@/components/notifications/notification-toggle"
 import { TestNotificationButton } from "@/components/notifications/test-notification-button"
+import { StockAlertManager } from "@/components/notifications/stock-alert-manager"
 
 export default function SettingsPage() {
   return (
@@ -32,6 +33,8 @@ export default function SettingsPage() {
             <Link href="/dashboard/history" className="block text-primary hover:text-primary/80">Trade history</Link>
           </CardContent>
         </Card>
+
+        <StockAlertManager />
       </div>
     </PageShell>
   )
