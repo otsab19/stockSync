@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server"
+import { getBrokerProvider } from "@/lib/integrations/factory"
+import type { BrokerInstrument } from "@/lib/integrations/provider"
 import { createClient } from "@/utils/supabase/server"
 
 type AlertDirection = "up" | "down" | "both"
@@ -9,6 +11,13 @@ type PositionRow = {
   company_name: string
   live_price: number | string
   native_currency: "GBP" | "USD"
+}
+
+type ProfileRow = {
+  t212_api_key: string | null
+  t212_api_secret: string | null
+  etoro_api_key: string | null
+  etoro_api_secret: string | null
 }
 
 type AlertRuleRow = {
@@ -96,6 +105,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as {
     broker?: string
     ticker?: string
+    instrument?: BrokerInstrument
     direction?: string
     thresholdPercent?: number
   } | null
@@ -115,11 +125,54 @@ export async function POST(request: Request) {
     .eq("ticker", body.ticker)
     .single() as unknown as { data: PositionRow | null }
 
-  if (!position) {
-    return NextResponse.json({ message: "Stock not found in synced positions. Sync your broker first." }, { status: 404 })
+  let alertStock: {
+    broker: "t212" | "etoro"
+    ticker: string
+    companyName: string
+    livePrice: number
+    nativeCurrency: "GBP" | "USD"
+    instrumentId: string | null
+  } | null = position ? {
+    broker: position.broker,
+    ticker: position.ticker,
+    companyName: position.company_name,
+    livePrice: toNumber(position.live_price),
+    nativeCurrency: position.native_currency,
+    instrumentId: body.instrument?.id ?? null,
+  } : null
+
+  if (!alertStock && body.instrument?.broker === body.broker && body.instrument.ticker === body.ticker) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("t212_api_key, t212_api_secret, etoro_api_key, etoro_api_secret")
+      .eq("id", user.id)
+      .single() as unknown as { data: ProfileRow | null }
+
+    const provider = getBrokerProvider(body.instrument.broker)
+    const credentials = body.instrument.broker === "t212"
+      ? { apiKey: profile?.t212_api_key ?? "", apiSecret: profile?.t212_api_secret ?? "" }
+      : { apiKey: profile?.etoro_api_key ?? "", apiSecret: profile?.etoro_api_secret ?? "" }
+    const quote = provider?.getInstrumentQuote
+      ? await provider.getInstrumentQuote(body.instrument, credentials)
+      : null
+
+    if (quote) {
+      alertStock = {
+        broker: quote.broker,
+        ticker: quote.ticker,
+        companyName: quote.companyName,
+        livePrice: quote.livePrice,
+        nativeCurrency: quote.nativeCurrency,
+        instrumentId: quote.id,
+      }
+    }
   }
 
-  const baselinePrice = toNumber(position.live_price)
+  if (!alertStock) {
+    return NextResponse.json({ message: "This stock does not have a live quote source yet. eToro searched stocks can be saved; Trading 212 arbitrary stocks need a quote provider." }, { status: 404 })
+  }
+
+  const baselinePrice = alertStock.livePrice
   if (baselinePrice <= 0) {
     return NextResponse.json({ message: "Stock has no valid live price yet." }, { status: 400 })
   }
@@ -129,13 +182,14 @@ export async function POST(request: Request) {
   }).upsert(
     {
       user_id: user.id,
-      broker: position.broker,
-      ticker: position.ticker,
-      company_name: position.company_name,
+      broker: alertStock.broker,
+      ticker: alertStock.ticker,
+      company_name: alertStock.companyName,
+      instrument_id: alertStock.instrumentId,
       direction,
       threshold_percent: thresholdPercent,
       baseline_price: baselinePrice,
-      baseline_currency: position.native_currency,
+      baseline_currency: alertStock.nativeCurrency,
       is_enabled: true,
       updated_at: new Date().toISOString(),
     },

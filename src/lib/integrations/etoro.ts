@@ -1,6 +1,6 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importEtoroPortfolioFromCsv } from "@/lib/integrations/etoro-csv"
-import { fetchEtoroActivityFromApi, fetchEtoroPortfolioFromApi } from "@/lib/integrations/etoro-live"
+import { fetchEtoroActivityFromApi, fetchEtoroInstrumentQuoteFromApi, fetchEtoroPortfolioFromApi, searchEtoroInstrumentsFromApi } from "@/lib/integrations/etoro-live"
 import { getEtoroSamplePortfolio } from "@/lib/portfolio/sample-portfolio"
 
 export const etoroProvider: BrokerProvider = {
@@ -41,6 +41,12 @@ export const etoroProvider: BrokerProvider = {
           : `eToro positions refreshed, but trade history failed: ${message.slice(0, 150)}`,
       }
     }
+  },
+  async searchInstruments(query, credentials) {
+    return searchEtoroInstrumentsFromApi(query, credentials)
+  },
+  async getInstrumentQuote(instrument, credentials) {
+    return fetchEtoroInstrumentQuoteFromApi(instrument, credentials)
   },
   async importFromCsv(csvText: string) {
     return importEtoroPortfolioFromCsv(csvText)

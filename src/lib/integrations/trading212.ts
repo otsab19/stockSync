@@ -1,6 +1,6 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importTrading212PortfolioFromCsv } from "@/lib/integrations/trading212-csv"
-import { fetchTrading212ActivityFromApi, fetchTrading212PortfolioFromApi } from "@/lib/integrations/trading212-live"
+import { fetchTrading212ActivityFromApi, fetchTrading212PortfolioFromApi, searchTrading212InstrumentsFromApi } from "@/lib/integrations/trading212-live"
 import { getTrading212SamplePortfolio } from "@/lib/portfolio/sample-portfolio"
 
 function isTrading212RateLimitError(error: unknown) {
@@ -49,6 +49,9 @@ export const trading212Provider: BrokerProvider = {
         message: "Trading 212 positions refreshed, but trade history hit the broker rate limit. Try refreshing history again in a minute.",
       }
     }
+  },
+  async searchInstruments(query, credentials) {
+    return searchTrading212InstrumentsFromApi(query, credentials)
   },
   async importFromCsv(csvText: string) {
     return importTrading212PortfolioFromCsv(csvText)

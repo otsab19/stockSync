@@ -1,5 +1,6 @@
 import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
+import type { BrokerInstrument } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 
@@ -21,6 +22,8 @@ type Trading212HistoryResponse = {
   items?: Trading212ApiRow[]
   nextPagePath?: string | null
 }
+
+type Trading212InstrumentResponse = Trading212ApiRow[]
 
 function getNestedValue(row: Trading212ApiRow, path: string) {
   return path
@@ -123,6 +126,31 @@ function normalizeTrading212AssetType(row: Trading212ApiRow, companyName: string
   }
 
   return inferAssetType(explicitType, inferAssetType(companyName))
+}
+
+function mapTrading212InstrumentRow(row: Trading212ApiRow): BrokerInstrument | null {
+  const rawTicker = getStringValue(row, ["ticker", "symbol", "instrumentCode"])
+  const companyName = getStringValue(row, ["name", "shortName", "displayName", "instrumentName"]) ?? rawTicker
+  const currency = normalizeCurrency(getStringValue(row, ["currencyCode", "currency"]))
+  const type = getStringValue(row, ["type", "instrumentType", "assetType"])?.toUpperCase()
+
+  if (!rawTicker || !companyName || !currency) {
+    return null
+  }
+
+  if (type && !["STOCK", "ETF"].includes(type)) {
+    return null
+  }
+
+  return {
+    broker: "t212",
+    id: rawTicker,
+    ticker: normalizeTickerSymbol(rawTicker),
+    companyName,
+    nativeCurrency: currency,
+    assetType: type === "ETF" ? "etf" : "stock",
+    isQuoteAvailable: false,
+  }
 }
 
 function extractTrading212Rows(payload: unknown): Trading212ApiRow[] {
@@ -418,6 +446,34 @@ export async function fetchTrading212PortfolioFromApi(credentials?: string | Bro
   logger.info({ broker: "t212" }, "Starting Trading 212 portfolio sync")
   const payload = await fetchTrading212Json<Trading212ApiResponse>("/equity/positions", apiKey, apiSecret)
   return mapTrading212PortfolioResponse(payload)
+}
+
+export async function searchTrading212InstrumentsFromApi(
+  query: string,
+  credentials?: string | BrokerApiCredentials
+): Promise<BrokerInstrument[]> {
+  const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    throw new Error("Trading 212 requires both an API key and an API secret before searching instruments.")
+  }
+
+  const normalizedQuery = query.trim().toLowerCase()
+  if (normalizedQuery.length < 2) {
+    return []
+  }
+
+  const payload = await fetchTrading212Json<Trading212InstrumentResponse>("/equity/metadata/instruments", apiKey, apiSecret)
+
+  return payload
+    .filter(isRecord)
+    .map(mapTrading212InstrumentRow)
+    .filter((instrument): instrument is BrokerInstrument => Boolean(instrument))
+    .filter((instrument) => {
+      const haystack = `${instrument.ticker} ${instrument.id} ${instrument.companyName}`.toLowerCase()
+      return haystack.includes(normalizedQuery)
+    })
+    .slice(0, 12)
 }
 
 export async function fetchTrading212ActivityFromApi(credentials?: string | BrokerApiCredentials): Promise<PortfolioActivityEvent[]> {

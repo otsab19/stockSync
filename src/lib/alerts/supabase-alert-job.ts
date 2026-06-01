@@ -3,6 +3,7 @@ import type { AlertJobRepository } from "@/lib/alerts/repository"
 import type { AlertJobResult } from "@/types/alerts"
 import { createServiceRoleClient, getSupabaseServiceRoleSetupMessage } from "@/utils/supabase/server"
 import { getBrokerProvider } from "@/lib/integrations/factory"
+import type { BrokerInstrumentQuote } from "@/lib/integrations/provider"
 import { PROFIT_ALERT_THRESHOLD_GBP } from "@/lib/alerts/thresholds"
 import type { PortfolioPosition } from "@/types/portfolio"
 
@@ -41,6 +42,14 @@ type StockAlertRuleRow = {
   threshold_percent: number | string
   baseline_price: number | string
   baseline_currency: "GBP" | "USD"
+  instrument_id: string | null
+}
+
+type ProfileCredentials = {
+  t212_api_key: string | null
+  t212_api_secret: string | null
+  etoro_api_key: string | null
+  etoro_api_secret: string | null
 }
 
 type DeleteBuilder = PromiseLike<unknown> & {
@@ -125,15 +134,12 @@ async function evaluateStockMoveAlerts(
   supabase: NonNullable<ReturnType<typeof createServiceRoleClient>>,
   writer: SupabaseWriter,
   userId: string,
-  positions: PortfolioPosition[]
+  positions: PortfolioPosition[],
+  credentials: ProfileCredentials
 ) {
-  if (positions.length === 0) {
-    return [] as Array<{ ticker: string; broker: string; title: string; body: string; tag: string }>
-  }
-
   const { data: rules } = await supabase
     .from("stock_alert_rules")
-    .select("id, user_id, broker, ticker, company_name, direction, threshold_percent, baseline_price, baseline_currency")
+    .select("id, user_id, broker, ticker, company_name, direction, threshold_percent, baseline_price, baseline_currency, instrument_id")
     .eq("user_id", userId)
     .eq("is_enabled", true) as unknown as { data: StockAlertRuleRow[] | null }
 
@@ -142,13 +148,41 @@ async function evaluateStockMoveAlerts(
 
   for (const rule of rules ?? []) {
     const position = positionMap.get(`${rule.broker}:${rule.ticker}`)
-    if (!position) continue
+    let quote: BrokerInstrumentQuote | null = position ? {
+      broker: position.broker as "t212" | "etoro",
+      id: rule.instrument_id ?? position.ticker,
+      ticker: position.ticker,
+      companyName: position.companyName,
+      livePrice: position.livePrice,
+      nativeCurrency: position.nativeCurrency,
+    } : null
+
+    if (!quote && rule.instrument_id) {
+      const provider = getBrokerProvider(rule.broker)
+      const brokerCredentials = rule.broker === "t212"
+        ? { apiKey: credentials.t212_api_key ?? "", apiSecret: credentials.t212_api_secret ?? "" }
+        : { apiKey: credentials.etoro_api_key ?? "", apiSecret: credentials.etoro_api_secret ?? "" }
+
+      quote = provider?.getInstrumentQuote
+        ? await provider.getInstrumentQuote({
+          broker: rule.broker,
+          id: rule.instrument_id,
+          ticker: rule.ticker,
+          companyName: rule.company_name,
+          nativeCurrency: rule.baseline_currency,
+          assetType: "stock",
+          isQuoteAvailable: true,
+        }, brokerCredentials)
+        : null
+    }
+
+    if (!quote) continue
 
     const baselinePrice = toNumber(rule.baseline_price)
     const thresholdPercent = toNumber(rule.threshold_percent)
     if (baselinePrice <= 0 || thresholdPercent <= 0) continue
 
-    const changePercent = ((position.livePrice - baselinePrice) / baselinePrice) * 100
+    const changePercent = ((quote.livePrice - baselinePrice) / baselinePrice) * 100
     const movedUp = changePercent >= thresholdPercent
     const movedDown = changePercent <= -thresholdPercent
     const shouldTrigger = rule.direction === "both"
@@ -161,22 +195,22 @@ async function evaluateStockMoveAlerts(
 
     const directionLabel = changePercent >= 0 ? "up" : "down"
     const signedPercent = `${changePercent >= 0 ? "+" : ""}${changePercent.toFixed(2)}%`
-    const title = `${position.ticker} moved ${directionLabel} ${Math.abs(changePercent).toFixed(2)}%`
-    const body = `${position.companyName} moved from ${baselinePrice.toFixed(4)} to ${position.livePrice.toFixed(4)} (${signedPercent}).`
+    const title = `${quote.ticker} moved ${directionLabel} ${Math.abs(changePercent).toFixed(2)}%`
+    const body = `${quote.companyName} moved from ${baselinePrice.toFixed(4)} to ${quote.livePrice.toFixed(4)} (${signedPercent}).`
 
     triggered.push({
-      ticker: position.ticker,
-      broker: position.broker,
+      ticker: quote.ticker,
+      broker: quote.broker,
       title,
       body,
       tag: `stock-alert-${rule.id}`,
     })
 
     await writer.from("stock_alert_rules").update({
-      baseline_price: position.livePrice,
-      baseline_currency: position.nativeCurrency,
+      baseline_price: quote.livePrice,
+      baseline_currency: quote.nativeCurrency,
       last_triggered_at: new Date().toISOString(),
-      last_triggered_price: position.livePrice,
+      last_triggered_price: quote.livePrice,
       updated_at: new Date().toISOString(),
     }).eq("id", rule.id)
   }
@@ -265,7 +299,6 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
         }
       }
 
-      if (positions.length === 0) continue
       usersChecked++
 
       // Get existing snapshots for this user
@@ -279,7 +312,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
       )
 
       const triggeredAlerts: Array<{ ticker: string; broker: string; title: string; body: string; tag: string }> = []
-      triggeredAlerts.push(...await evaluateStockMoveAlerts(supabase, writer, profile.id, positions))
+      triggeredAlerts.push(...await evaluateStockMoveAlerts(supabase, writer, profile.id, positions, profile))
 
       for (const pos of positions) {
         const key = `${pos.ticker}:${pos.broker}`

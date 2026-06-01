@@ -1,5 +1,6 @@
 import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
+import type { BrokerInstrument, BrokerInstrumentQuote } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 
@@ -35,6 +36,14 @@ type EtoroRateSnapshot = {
   instrumentId: number
   livePrice: number | null
   recentChange: number
+}
+
+type EtoroSearchResponse = EtoroApiRow[] | {
+  instruments?: unknown[]
+  results?: unknown[]
+  items?: unknown[]
+  data?: unknown[]
+  instrumentDisplayDatas?: unknown[]
 }
 
 type EtoroTradeHistoryRow = {
@@ -585,6 +594,84 @@ function mapRateRow(row: EtoroApiRow): EtoroRateSnapshot | null {
   }
 }
 
+function extractEtoroSearchRows(payload: EtoroSearchResponse): EtoroApiRow[] {
+  if (Array.isArray(payload)) {
+    return payload.filter(isRecord)
+  }
+
+  const candidates = [
+    payload.instruments,
+    payload.results,
+    payload.items,
+    payload.data,
+    payload.instrumentDisplayDatas,
+  ]
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter(isRecord)
+    }
+  }
+
+  return []
+}
+
+function mapEtoroSearchRowToInstrument(row: EtoroApiRow): BrokerInstrument | null {
+  const instrumentId = getEtoroInstrumentId(row)
+  if (instrumentId === null) {
+    return null
+  }
+
+  const metadata = mapInstrumentMetadataRow(row)
+  const rawTicker = getStringValue(row, [
+    "internalSymbolFull",
+    "InternalSymbolFull",
+    "symbolFull",
+    "SymbolFull",
+    "ticker",
+    "Ticker",
+    "symbol",
+    "Symbol",
+    "displaySymbol",
+    "DisplaySymbol",
+  ]) ?? metadata?.ticker
+  const companyName = getStringValue(row, [
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
+    "displayName",
+    "DisplayName",
+    "name",
+    "Name",
+    "companyName",
+    "CompanyName",
+  ]) ?? metadata?.companyName ?? rawTicker
+
+  if (!rawTicker || !companyName) {
+    return null
+  }
+
+  const currency = metadata?.currency ?? getEtoroCurrencyInfo(getStringValue(row, [
+    "currency",
+    "Currency",
+    "currencyCode",
+    "CurrencyCode",
+    "priceCurrency",
+    "PriceCurrency",
+  ])).currency ?? "USD"
+  const ticker = cleanEtoroTicker(rawTicker, metadata?.priceScale === "gbx" || currency === "GBP")
+
+  return {
+    broker: "etoro",
+    id: String(instrumentId),
+    ticker,
+    companyName,
+    nativeCurrency: currency,
+    assetType: metadata?.assetType ?? mapMetadataAssetType(row, companyName) ?? inferAssetType(companyName),
+    exchange: getStringValue(row, ["exchangeName", "ExchangeName", "exchange", "Exchange"]) ?? undefined,
+    isQuoteAvailable: true,
+  }
+}
+
 async function fetchEtoroJson<T>(baseUrl: string, path: string, headers: ReturnType<typeof buildEtoroHeaders>): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "GET",
@@ -1057,6 +1144,80 @@ export async function fetchEtoroPortfolioFromApi(credentials?: string | BrokerAp
       ? `Failed to load the eToro portfolio from the API. Tried: ${attemptedResponses.join("; ")}. The documented real-account path is ${DEFAULT_ETORO_REAL_PORTFOLIO_PATH} on ${baseUrl}; if your account uses demo mode or a different documented path, set ETORO_ACCOUNT_MODE or ETORO_PORTFOLIO_PATHS.`
       : "Failed to load the eToro portfolio from the API."
   )
+}
+
+export async function searchEtoroInstrumentsFromApi(
+  query: string,
+  credentials?: string | BrokerApiCredentials
+): Promise<BrokerInstrument[]> {
+  const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    throw new Error("eToro requires both an API key and a user key before searching instruments.")
+  }
+
+  const normalizedQuery = query.trim()
+  if (normalizedQuery.length < 2) {
+    return []
+  }
+
+  const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
+  const headers = buildEtoroHeaders(apiKey, apiSecret)
+  const path = `/api/v1/market-data/search?internalSymbolFull=${encodeURIComponent(normalizedQuery.toUpperCase())}`
+  const payload = await fetchEtoroJson<EtoroSearchResponse>(baseUrl, path, headers)
+
+  const instruments = extractEtoroSearchRows(payload)
+    .map(mapEtoroSearchRowToInstrument)
+    .filter((instrument): instrument is BrokerInstrument => Boolean(instrument))
+
+  const rates = await fetchEtoroLiveRates(
+    baseUrl,
+    headers,
+    instruments.map((instrument) => Number(instrument.id)).filter(Number.isFinite)
+  )
+
+  return instruments.map((instrument) => {
+    const rate = rates.get(Number(instrument.id))
+    return {
+      ...instrument,
+      livePrice: rate?.livePrice ?? undefined,
+      isQuoteAvailable: Boolean(rate?.livePrice && rate.livePrice > 0),
+    }
+  }).slice(0, 12)
+}
+
+export async function fetchEtoroInstrumentQuoteFromApi(
+  instrument: BrokerInstrument,
+  credentials?: string | BrokerApiCredentials
+): Promise<BrokerInstrumentQuote | null> {
+  const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    throw new Error("eToro requires both an API key and a user key before loading instrument quotes.")
+  }
+
+  const instrumentId = Number(instrument.id)
+  if (!Number.isFinite(instrumentId)) {
+    return null
+  }
+
+  const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
+  const headers = buildEtoroHeaders(apiKey, apiSecret)
+  const rates = await fetchEtoroLiveRates(baseUrl, headers, [instrumentId])
+  const rate = rates.get(instrumentId)
+
+  if (!rate?.livePrice || rate.livePrice <= 0) {
+    return null
+  }
+
+  return {
+    broker: "etoro",
+    id: instrument.id,
+    ticker: instrument.ticker,
+    companyName: instrument.companyName,
+    livePrice: rate.livePrice,
+    nativeCurrency: instrument.nativeCurrency,
+  }
 }
 
 export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApiCredentials): Promise<PortfolioActivityEvent[]> {
