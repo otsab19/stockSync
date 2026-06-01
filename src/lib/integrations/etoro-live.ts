@@ -290,6 +290,10 @@ function mapInstrumentMetadataRow(row: EtoroApiRow): EtoroInstrumentMetadata | n
   }
 
   const ticker = getStringValue(row, [
+    "symbolFull",
+    "SymbolFull",
+    "internalSymbolFull",
+    "InternalSymbolFull",
     "ticker",
     "Ticker",
     "symbol",
@@ -575,9 +579,37 @@ function createEtoroActivityEvent(
 
   const nativeCurrency = metadata?.currency ?? rowCurrencyInfo.currency ?? "USD"
   const isLse = metadata?.priceScale === "gbx" || nativeCurrency === "GBP" || priceScale === "gbx"
-  const rawTicker = metadata?.ticker ?? metadata?.companyName ?? `ET${instrumentId}`
+  const historyTicker = getStringValue(normalizedRow, [
+    "symbolFull",
+    "SymbolFull",
+    "internalSymbolFull",
+    "InternalSymbolFull",
+    "ticker",
+    "Ticker",
+    "symbol",
+    "Symbol",
+    "displaySymbol",
+    "DisplaySymbol",
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
+    "instrumentName",
+    "InstrumentName",
+  ])
+  const historyCompanyName = getStringValue(normalizedRow, [
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
+    "instrumentName",
+    "InstrumentName",
+    "displayName",
+    "DisplayName",
+    "name",
+    "Name",
+    "companyName",
+    "CompanyName",
+  ])
+  const rawTicker = metadata?.ticker ?? historyTicker ?? `ET${instrumentId}`
   const ticker = cleanEtoroTicker(rawTicker, isLse)
-  const companyName = metadata?.companyName ?? ticker
+  const companyName = metadata?.companyName ?? historyCompanyName ?? ticker
   const positionId = getNumberValue(normalizedRow, ["positionId", "PositionId"]) ?? instrumentId
 
   // For consistent P&L calculations, ALWAYS derive grossAmountGbp from shares * price in native currency.

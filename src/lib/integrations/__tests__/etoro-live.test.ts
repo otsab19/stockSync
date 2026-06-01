@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest"
-import { mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
+import { afterEach, describe, it, expect, vi } from "vitest"
+import { fetchEtoroActivityFromApi, mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe("eToro live mapper", () => {
   it("maps a USD position with correct FX", () => {
@@ -135,6 +139,47 @@ describe("eToro live mapper", () => {
     }
 
     expect(mapEtoroPortfolioResponse(payload)).toEqual([])
+  })
+
+  it("uses eToro history symbol fields when metadata enrichment is unavailable", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+
+      if (requestUrl.includes("/trading/info/trade/history")) {
+        return Response.json([
+          {
+            instrumentID: 137,
+            symbolFull: "NVDA",
+            instrumentDisplayName: "NVIDIA Corporation",
+            isBuy: true,
+            openTimestamp: "2026-06-01T09:00:00Z",
+            closeTimestamp: "2026-06-01T15:00:00Z",
+            openRate: 100,
+            closeRate: 110,
+            investment: 1000,
+            units: 10,
+          },
+        ])
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return new Response("metadata unavailable", { status: 500 })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const activity = await fetchEtoroActivityFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+
+    expect(activity).toHaveLength(2)
+    expect(activity.map((event) => event.ticker)).toEqual(["NVDA", "NVDA"])
+    expect(activity.map((event) => event.companyName)).toEqual(["NVIDIA Corporation", "NVIDIA Corporation"])
   })
 })
 
