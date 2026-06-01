@@ -24,6 +24,26 @@ self.addEventListener('activate', function (event) {
     })
   );
   self.clients.claim();
+
+  // Register periodic background sync if supported (Chromium PWAs)
+  if (self.registration.periodicSync) {
+    self.registration.periodicSync.register('check-portfolio-alerts', {
+      minInterval: 15 * 60 * 1000, // 15 minutes
+    }).catch(function () {
+      // Permission not granted or not supported — alerts only work while app is open
+    });
+  }
+});
+
+// Periodic background sync — runs even when app is closed (installed PWA on Chromium)
+self.addEventListener('periodicsync', function (event) {
+  if (event.tag === 'check-portfolio-alerts') {
+    event.waitUntil(
+      fetch('/api/cron/check-alerts')
+        .then(function (response) { return response.json(); })
+        .catch(function () { /* silent */ })
+    );
+  }
 });
 
 self.addEventListener('push', function (event) {
@@ -32,7 +52,7 @@ self.addEventListener('push', function (event) {
   let data;
   try {
     data = event.data.json();
-  } catch (e) {
+  } catch {
     data = { title: 'StockSync', body: event.data.text() };
   }
 
