@@ -274,5 +274,63 @@ describe("eToro live mapper", () => {
     expect(activity.find((event) => event.type === "sell")?.ticker).toBe("RR")
     expect(new Set(requestIds).size).toBe(requestIds.length)
   })
+
+  it("requests eToro metadata with comma-separated instrument IDs", async () => {
+    const requestUrls: string[] = []
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+      requestUrls.push(requestUrl)
+
+      if (requestUrl.includes("/trading/info/trade/history")) {
+        return Response.json([
+          {
+            instrumentID: 1137,
+            isBuy: true,
+            openTimestamp: "2026-05-29T16:57:00Z",
+            closeTimestamp: "2026-06-01T14:50:00Z",
+            openRate: 215.27,
+            closeRate: 220.29,
+            units: 31.123705,
+            investment: 5293,
+          },
+          {
+            instrumentID: 2072,
+            isBuy: true,
+            openTimestamp: "2026-05-28T10:08:00Z",
+            closeTimestamp: "2026-05-28T15:19:00Z",
+            openRate: 1305,
+            closeRate: 1324.08,
+            units: 377.310598,
+            investment: 388988.36,
+          },
+        ])
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return Response.json({
+          instrumentDisplayDatas: [
+            { instrumentID: 1137, instrumentDisplayName: "NVIDIA Corporation", symbolFull: "NVDA", priceSource: "NASDAQ" },
+            { instrumentID: 2072, instrumentDisplayName: "Rolls-Royce Holdings", symbolFull: "RR.L", priceSource: "LSE" },
+          ],
+        })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const activity = await fetchEtoroActivityFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+    const metadataUrl = requestUrls.find((url) => url.includes("/market-data/instruments?"))
+
+    expect(metadataUrl).toContain("instrumentIds=1137,2072")
+    expect(metadataUrl).not.toContain("1137%2C2072")
+    expect(activity.filter((event) => event.type === "sell").map((event) => event.ticker)).toEqual(["NVDA", "RR"])
+    expect(activity.find((event) => event.ticker === "RR" && event.type === "sell")?.price).toBe(13.2408)
+  })
 })
 

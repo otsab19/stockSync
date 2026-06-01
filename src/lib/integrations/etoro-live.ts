@@ -853,19 +853,30 @@ async function fetchEtoroInstrumentMetadata(baseUrl: string, headers: ReturnType
     return new Map<number, EtoroInstrumentMetadata>()
   }
 
+  const encodedInstrumentIds = instrumentIds.join(",")
   const payload = await fetchEtoroJson<{ instrumentDisplayDatas?: unknown[] }>(
     baseUrl,
-    `/api/v1/market-data/instruments?instrumentIds=${encodeURIComponent(instrumentIds.join(","))}`,
+    `/api/v1/market-data/instruments?instrumentIds=${encodedInstrumentIds}`,
     headers
   )
 
-  return new Map(
+  const metadata = new Map(
     (payload.instrumentDisplayDatas ?? [])
       .filter(isRecord)
       .map(mapInstrumentMetadataRow)
       .filter((entry): entry is EtoroInstrumentMetadata => Boolean(entry))
       .map((entry) => [entry.instrumentId, entry])
   )
+
+  if (metadata.size < instrumentIds.length) {
+    logger.warn({
+      broker: "etoro",
+      requestedInstrumentIds: instrumentIds,
+      metadataCount: metadata.size,
+    }, "eToro instrument metadata response did not include every requested instrument")
+  }
+
+  return metadata
 }
 
 async function fetchEtoroLiveRates(baseUrl: string, headers: ReturnType<typeof buildEtoroHeaders>, instrumentIds: number[]) {
@@ -875,7 +886,7 @@ async function fetchEtoroLiveRates(baseUrl: string, headers: ReturnType<typeof b
 
   const payload = await fetchEtoroJson<{ rates?: unknown[] }>(
     baseUrl,
-    `/api/v1/market-data/instruments/rates?instrumentIds=${encodeURIComponent(instrumentIds.join(","))}`,
+    `/api/v1/market-data/instruments/rates?instrumentIds=${instrumentIds.join(",")}`,
     headers
   )
 
