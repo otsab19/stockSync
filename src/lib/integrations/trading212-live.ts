@@ -192,7 +192,7 @@ function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | 
     : walletCurrency === "GBP"
       ? explicitTotalPlValue
       : walletCurrency === currency
-        ? explicitTotalPlValue * (fxRateToGbp ?? (currency === "GBP" ? 1 : USD_TO_GBP_FALLBACK_RATE))
+        ? explicitTotalPlValue * (fxRateToGbp ?? USD_TO_GBP_FALLBACK_RATE)
         : undefined
 
   return normalizeImportedHolding({
