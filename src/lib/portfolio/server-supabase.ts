@@ -1,14 +1,88 @@
 import { createClient, getSupabaseSetupMessage } from "@/utils/supabase/server"
 import type { PortfolioApiResponse, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 import type { ServerPortfolioRepository } from "@/lib/portfolio/repository"
-import { getBrokerProvider } from "@/lib/integrations/factory"
+import { normalizeImportedHolding } from "@/lib/portfolio/position-normalizer"
 import { createFailurePortfolioResponse, createSuccessPortfolioResponse } from "@/lib/dashboard/portfolio-response"
 
-type ProfileKeys = {
-  t212_api_key: string | null
-  t212_api_secret: string | null
-  etoro_api_key: string | null
-  etoro_api_secret: string | null
+type PositionRow = {
+  broker: "t212" | "etoro"
+  ticker: string
+  company_name: string
+  shares: number | string
+  avg_price: number | string
+  live_price: number | string
+  native_currency: "GBP" | "USD"
+  fx_rate_to_gbp: number | string
+  total_value_gbp: number | string
+  total_pl: number | string
+  total_pl_percent: number | string
+  updated_at: string
+}
+
+type ActivityRow = {
+  broker: "t212" | "etoro"
+  ticker: string
+  company_name: string
+  event_type: "buy" | "sell"
+  shares: number | string
+  price: number | string
+  native_currency: "GBP" | "USD"
+  gross_amount_gbp: number | string
+  realised_profit_gbp: number | string | null
+  order_type: string | null
+  timestamp: string
+}
+
+function toNumber(value: number | string | null | undefined) {
+  const parsed = typeof value === "number" ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function getBrokerLabel(broker: "t212" | "etoro") {
+  return broker === "t212" ? "Trading 212" : "eToro"
+}
+
+function mapPositionRow(row: PositionRow): PortfolioPosition {
+  const fxRateToGbp = toNumber(row.fx_rate_to_gbp) || 1
+  const totalValueGbp = toNumber(row.total_value_gbp)
+
+  return normalizeImportedHolding({
+    broker: row.broker,
+    brokerLabel: getBrokerLabel(row.broker),
+    ticker: row.ticker,
+    companyName: row.company_name,
+    shares: toNumber(row.shares),
+    avgPrice: toNumber(row.avg_price),
+    livePrice: toNumber(row.live_price),
+    nativeCurrency: row.native_currency,
+    fxRateToGbp,
+    nativeTotalValue: fxRateToGbp === 0 ? totalValueGbp : totalValueGbp / fxRateToGbp,
+    totalPL: toNumber(row.total_pl),
+    totalPLPercent: toNumber(row.total_pl_percent),
+  })
+}
+
+function mapActivityRow(row: ActivityRow): PortfolioActivityEvent {
+  const grossAmountGbp = toNumber(row.gross_amount_gbp)
+  const price = toNumber(row.price)
+  const shares = toNumber(row.shares)
+
+  return {
+    id: `${row.broker}:${row.ticker}:${row.timestamp}:${row.event_type}`,
+    timestamp: row.timestamp,
+    broker: row.broker,
+    brokerLabel: getBrokerLabel(row.broker),
+    ticker: row.ticker,
+    companyName: row.company_name,
+    type: row.event_type,
+    shares,
+    price,
+    nativeCurrency: row.native_currency,
+    grossAmount: shares > 0 && price > 0 ? shares * price : grossAmountGbp,
+    grossAmountGbp,
+    realisedProfitGbp: row.realised_profit_gbp === null ? undefined : toNumber(row.realised_profit_gbp),
+    orderType: row.order_type ?? undefined,
+  }
 }
 
 export class SupabaseServerPortfolioRepository implements ServerPortfolioRepository {
@@ -33,62 +107,48 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
       )
     }
 
-    const profileResponse = await supabase
-      .from("profiles")
-      .select("t212_api_key, t212_api_secret, etoro_api_key, etoro_api_secret")
-      .filter("id", "eq", user.id)
-      .single()
+    const { data: positionRows, error: positionsError } = await supabase
+      .from("positions")
+      .select("broker, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at")
+      .eq("user_id", user.id)
+      .order("broker")
+      .order("ticker") as unknown as { data: PositionRow[] | null; error: Error | null }
 
-    const profile = profileResponse.data as unknown as ProfileKeys | null
-
-    if (profileResponse.error) {
+    if (positionsError) {
       return createFailurePortfolioResponse(
         "error",
         "supabase",
         "server",
-        "Failed to load broker API keys from the profiles table."
+        "Failed to load synced positions from Supabase."
       )
     }
 
-    const portfolio: PortfolioPosition[] = []
-    const activity: PortfolioActivityEvent[] = []
-    const messages: string[] = []
+    const { data: activityRows, error: activityError } = await supabase
+      .from("activity_events")
+      .select("broker, ticker, company_name, event_type, shares, price, native_currency, gross_amount_gbp, realised_profit_gbp, order_type, timestamp")
+      .eq("user_id", user.id)
+      .order("timestamp", { ascending: false }) as unknown as { data: ActivityRow[] | null; error: Error | null }
 
-    if (profile?.t212_api_key) {
-      const provider = getBrokerProvider("t212")
-      if (provider) {
-        const credentials = { apiKey: profile.t212_api_key, apiSecret: profile.t212_api_secret ?? "" }
-        if (provider.getSyncData) {
-          const result = await provider.getSyncData(credentials)
-          portfolio.push(...result.positions)
-          if (result.activity) activity.push(...result.activity)
-          if (result.message) messages.push(result.message)
-        } else {
-          portfolio.push(...(await provider.getPositions(credentials)))
-        }
-      }
+    if (activityError) {
+      return createFailurePortfolioResponse(
+        "error",
+        "supabase",
+        "server",
+        "Failed to load synced activity from Supabase."
+      )
     }
 
-    if (profile?.etoro_api_key) {
-      const provider = getBrokerProvider("etoro")
-      if (provider) {
-        const credentials = { apiKey: profile.etoro_api_key, apiSecret: profile.etoro_api_secret ?? "" }
-        if (provider.getSyncData) {
-          const result = await provider.getSyncData(credentials)
-          portfolio.push(...result.positions)
-          if (result.activity) activity.push(...result.activity)
-          if (result.message) messages.push(result.message)
-        } else {
-          portfolio.push(...(await provider.getPositions(credentials)))
-        }
-      }
-    }
+    const portfolio = (positionRows ?? []).map(mapPositionRow)
+    const activity = (activityRows ?? []).map(mapActivityRow)
+    const latestSyncedAt = (positionRows ?? [])
+      .map((row) => row.updated_at)
+      .filter(Boolean)
+      .sort()
+      .at(-1)
 
     const message = portfolio.length === 0
-      ? "Add at least one broker API key in your profile to see positions."
-      : messages.length > 0
-        ? messages.join(" ")
-        : undefined
+      ? "No synced Supabase portfolio data yet. Sync a broker from the integrations page to populate the dashboard."
+      : "Loaded synced portfolio data from Supabase."
 
     return createSuccessPortfolioResponse(
       portfolio,
@@ -97,8 +157,8 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
       message,
       {
         sourceKind: "api_sync",
-        lastSyncedAt: new Date().toISOString(),
-        syncMode: "manual",
+        lastSyncedAt: latestSyncedAt,
+        syncMode: "scheduled",
       },
       activity
     )

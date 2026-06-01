@@ -86,7 +86,6 @@ function DashboardContent() {
 
       const repository = createClientPortfolioRepository()
       const data: PortfolioApiResponse = await repository.getPortfolio({
-        refresh: true,
         includeActivity: true,
       })
 

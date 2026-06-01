@@ -4,6 +4,7 @@ import type { AlertJobResult } from "@/types/alerts"
 import { createClient, getSupabaseSetupMessage } from "@/utils/supabase/server"
 import { getBrokerProvider } from "@/lib/integrations/factory"
 import { PROFIT_ALERT_THRESHOLD_GBP } from "@/lib/alerts/thresholds"
+import type { PortfolioPosition } from "@/types/portfolio"
 
 function configureWebPush() {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
@@ -30,6 +31,78 @@ type SnapshotRow = {
   last_alerted_pl: number
 }
 
+type DeleteBuilder = PromiseLike<unknown> & {
+  eq(column: string, value: unknown): DeleteBuilder
+}
+
+type TableWriter = {
+  upsert(values: unknown, options?: unknown): PromiseLike<unknown>
+  insert(values: unknown): PromiseLike<unknown>
+  delete(): DeleteBuilder
+}
+
+type SupabaseWriter = {
+  from(table: string): TableWriter
+}
+
+async function recordScheduledPositions(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>,
+  userId: string,
+  broker: "t212" | "etoro",
+  positions: PortfolioPosition[]
+) {
+  const now = new Date().toISOString()
+  const writer = supabase as unknown as SupabaseWriter
+
+  await writer.from("broker_connections").upsert(
+    {
+      user_id: userId,
+      broker,
+      source_type: "broker_api",
+      sync_mode: "scheduled",
+      sync_status: "succeeded",
+      is_enabled: true,
+      last_synced_at: now,
+      last_error: null,
+      updated_at: now,
+    },
+    { onConflict: "user_id,broker,source_type" }
+  )
+
+  await writer.from("sync_runs").insert({
+    user_id: userId,
+    broker,
+    trigger: "scheduled",
+    source_type: "broker_api",
+    status: "succeeded",
+    positions_imported: positions.length,
+    started_at: now,
+    finished_at: now,
+  })
+
+  await writer.from("positions").delete().eq("user_id", userId).eq("broker", broker)
+
+  if (positions.length > 0) {
+    await writer.from("positions").insert(
+      positions.map((position) => ({
+        user_id: userId,
+        broker: position.broker,
+        ticker: position.ticker,
+        company_name: position.companyName,
+        shares: position.shares,
+        avg_price: position.avgPrice,
+        live_price: position.livePrice,
+        native_currency: position.nativeCurrency,
+        fx_rate_to_gbp: position.fxRateToGbp,
+        total_value_gbp: position.normalizedTotalValueGbp,
+        total_pl: position.totalPL,
+        total_pl_percent: position.totalPLPercent,
+        updated_at: now,
+      }))
+    )
+  }
+}
+
 export class SupabaseAlertJobRepository implements AlertJobRepository {
   async runAlertCheck(): Promise<AlertJobResult> {
     const supabase = await createClient()
@@ -44,6 +117,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
     }
 
     const webPushConfig = configureWebPush()
+    const writer = supabase as unknown as SupabaseWriter
 
     if (!webPushConfig.ok) {
       return {
@@ -75,7 +149,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
     let usersChecked = 0
 
     for (const profile of profiles) {
-      const positions: Array<{ ticker: string; broker: string; totalPL: number }> = []
+      const positions: PortfolioPosition[] = []
 
       if (profile.t212_api_key) {
         const provider = getBrokerProvider("t212")
@@ -85,7 +159,8 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
               apiKey: profile.t212_api_key,
               apiSecret: profile.t212_api_secret ?? "",
             })
-            positions.push(...pos.map((p) => ({ ticker: p.ticker, broker: p.broker, totalPL: p.totalPL })))
+            await recordScheduledPositions(supabase, profile.id, "t212", pos)
+            positions.push(...pos)
           } catch { /* skip on error */ }
         }
       }
@@ -98,7 +173,8 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
               apiKey: profile.etoro_api_key,
               apiSecret: profile.etoro_api_secret ?? "",
             })
-            positions.push(...pos.map((p) => ({ ticker: p.ticker, broker: p.broker, totalPL: p.totalPL })))
+            await recordScheduledPositions(supabase, profile.id, "etoro", pos)
+            positions.push(...pos)
           } catch { /* skip on error */ }
         }
       }
@@ -134,7 +210,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
             triggeredAlerts.push({ ticker: pos.ticker, broker: pos.broker, pl: pos.totalPL, direction })
 
             // Update last_alerted_pl
-            await (supabase.from("portfolio_snapshots") as any).upsert(
+            await writer.from("portfolio_snapshots").upsert(
               {
                 user_id: profile.id,
                 ticker: pos.ticker,
@@ -146,7 +222,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
             )
           } else {
             // Update current PL but don't re-alert
-            await (supabase.from("portfolio_snapshots") as any).upsert(
+            await writer.from("portfolio_snapshots").upsert(
               {
                 user_id: profile.id,
                 ticker: pos.ticker,
@@ -159,7 +235,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
           }
         } else {
           // Below threshold, reset snapshot
-          await (supabase.from("portfolio_snapshots") as any).upsert(
+          await writer.from("portfolio_snapshots").upsert(
             {
               user_id: profile.id,
               ticker: pos.ticker,
@@ -202,7 +278,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
               } catch (err: unknown) {
                 // Remove stale subscriptions (410 Gone)
                 if (err && typeof err === "object" && "statusCode" in err && (err as { statusCode: number }).statusCode === 410) {
-                  await supabase
+                  await writer
                     .from("push_subscriptions")
                     .delete()
                     .eq("endpoint", sub.endpoint)

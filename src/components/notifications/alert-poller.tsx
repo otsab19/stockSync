@@ -7,7 +7,6 @@ import { PROFIT_ALERT_THRESHOLD_GBP } from "@/lib/alerts/thresholds"
 import type { PortfolioPosition } from "@/types/portfolio"
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
-const SYNC_INTERVAL_MS = 15 * 60 * 1000 // 15 minutes — re-fetch from broker APIs
 const isSupabaseBackend = process.env.NEXT_PUBLIC_DATA_BACKEND !== "browser"
 
 type AlertedState = Map<string, number> // key → last alerted PL bucket
@@ -72,20 +71,12 @@ function checkThresholds(positions: PortfolioPosition[], alertedRef: MutableRefO
 
 export function AlertPoller() {
   const alertedRef = useRef<AlertedState>(new Map())
-  const lastSyncRef = useRef<number>(0)
 
   const runCheck = useCallback(async () => {
     try {
       const repository = createClientPortfolioRepository()
-      const now = Date.now()
-      const shouldResync = now - lastSyncRef.current >= SYNC_INTERVAL_MS
 
-      // Re-fetch from broker APIs periodically to get fresh prices
-      const data = await repository.getPortfolio({ refresh: shouldResync })
-
-      if (shouldResync) {
-        lastSyncRef.current = now
-      }
+      const data = await repository.getPortfolio()
 
       if (data.status === "ok" && data.portfolio.length > 0) {
         checkThresholds(data.portfolio, alertedRef)

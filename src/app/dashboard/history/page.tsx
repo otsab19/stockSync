@@ -394,7 +394,7 @@ export default function DashboardHistoryPage() {
     try {
       setIsRefreshing(true)
       const repository = createClientPortfolioRepository()
-      const data = await repository.getPortfolio({ refresh: true, includeActivity: true })
+      const data = await repository.getPortfolio({ includeActivity: true })
       setPortfolioResponse(data)
       if (data.status === "ok") { setDashboardState("ready"); setMessage(data.message ?? null); return }
       setDashboardState(data.status)
