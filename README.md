@@ -200,10 +200,18 @@ supabase db reset    # applies migrations + seed
 
 ## Deployment
 
-Configured for Vercel (`vercel.json` present). Set environment variables in Vercel project settings.
+Deploy the Next.js app to Vercel and set the required environment variables in the Vercel project settings.
 
-For scheduled alert checks, configure a Vercel Cron or external cron to call:
+For closed-app alert delivery, use cron-job.org to call the secured alert endpoint on a schedule:
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/cron/check-alerts
 ```
+
+Recommended cron-job.org settings:
+
+- **URL**: `https://your-app.vercel.app/api/cron/check-alerts`
+- **Method**: `GET`
+- **Schedule**: every 15 minutes
+- **Request header**: `Authorization: Bearer <your CRON_SECRET value>`
+- **Expected status**: `200`

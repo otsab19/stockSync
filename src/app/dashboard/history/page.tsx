@@ -3,9 +3,9 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Fragment } from "react"
-import { ArrowUpRight, ArrowDownUp, ChevronDown, ChevronRight, RefreshCw, TrendingUp, TrendingDown, BarChart3, List } from "lucide-react"
+import { ArrowDownUp, ChevronDown, ChevronRight, RefreshCw, TrendingUp, TrendingDown, BarChart3, List } from "lucide-react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { PageHeader, PageShell } from "@/components/app/page-shell"
+import { PageShell } from "@/components/app/page-shell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -264,12 +264,16 @@ function HistoryTransactionsTable({ activity }: { activity: PortfolioActivityEve
   function toggleGroup(key: string) {
     setCollapsedGroups(prev => {
       const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
       return next
     })
   }
 
-  function SortHeader({ col, label, align }: { col: TableSortCol; label: string; align?: string }) {
+  function renderSortHeader(col: TableSortCol, label: string, align?: string) {
     return (
       <TableHead className={`min-w-[70px] cursor-pointer select-none ${align ?? ""}`} onClick={() => handleSort(col)}>
         {label} {sortCol === col ? (sortDir === "asc" ? "↑" : "↓") : ""}
@@ -297,13 +301,13 @@ function HistoryTransactionsTable({ activity }: { activity: PortfolioActivityEve
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
-                <SortHeader col="timestamp" label="Date" />
+                {renderSortHeader("timestamp", "Date")}
                 <TableHead className="min-w-[60px]">Broker</TableHead>
-                <SortHeader col="ticker" label="Ticker" />
+                {renderSortHeader("ticker", "Ticker")}
                 <TableHead className="min-w-[50px]">Type</TableHead>
-                <SortHeader col="shares" label="Shares" align="text-right" />
-                <SortHeader col="price" label="Price" align="text-right" />
-                <SortHeader col="gross" label="Gross" align="text-right" />
+                {renderSortHeader("shares", "Shares", "text-right")}
+                {renderSortHeader("price", "Price", "text-right")}
+                {renderSortHeader("gross", "Gross", "text-right")}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -353,11 +357,11 @@ export default function DashboardHistoryPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>("trades")
 
-  const fetchPortfolio = useCallback(async (refresh = false) => {
+  const fetchPortfolio = useCallback(async () => {
     try {
-      setIsRefreshing(refresh)
+      setIsRefreshing(true)
       const repository = createClientPortfolioRepository()
-      const data = await repository.getPortfolio({ refresh, includeActivity: true })
+      const data = await repository.getPortfolio({ refresh: true, includeActivity: true })
       setPortfolioResponse(data)
       if (data.status === "ok") { setDashboardState("ready"); setMessage(data.message ?? null); return }
       setDashboardState(data.status)
@@ -467,7 +471,7 @@ export default function DashboardHistoryPage() {
           <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
           {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers (T212 history may take ~30s due to rate limits)...</p>}
         </div>
-        <Button variant="outline" size="sm" onClick={() => void fetchPortfolio(true)} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+        <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
           <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
           {isRefreshing ? "Syncing..." : "Refresh"}
         </Button>
@@ -620,13 +624,13 @@ export default function DashboardHistoryPage() {
           <CardHeader>
             <CardTitle>No trade history loaded yet</CardTitle>
             <CardDescription>
-              Sync your broker via the API on the integrations page, then click "Refresh history" above to pull trade data from your connected brokers.
+              Sync your broker via the API on the integrations page. StockSync will refresh trade data automatically when this page opens.
               Trading 212 may rate-limit history requests — if it fails, wait a minute and try again.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3 text-sm text-muted-foreground">
             <Link href="/integrations" className="font-medium text-primary transition-colors hover:text-primary/80">Open broker connections</Link>
-            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio(true)} disabled={isRefreshing}>
+            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing}>
               <RefreshCw className={isRefreshing ? "size-3.5 animate-spin mr-1" : "size-3.5 mr-1"} />
               Sync now
             </Button>

@@ -80,16 +80,14 @@ function DashboardContent() {
   const [highlightedTicker, setHighlightedTicker] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const fetchPortfolio = useCallback(async (reason: "initial" | "manual" | "interval" = "manual") => {
+  const fetchPortfolio = useCallback(async () => {
     try {
-      if (reason !== "initial") {
-        setIsRefreshing(true)
-      }
+      setIsRefreshing(true)
 
       const repository = createClientPortfolioRepository()
       const data: PortfolioApiResponse = await repository.getPortfolio({
-        refresh: reason === "manual",
-        includeActivity: false,
+        refresh: true,
+        includeActivity: true,
       })
 
       setPortfolioResponse(data)
@@ -113,7 +111,7 @@ function DashboardContent() {
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      void fetchPortfolio("initial")
+      void fetchPortfolio()
     }, 0)
 
     return () => {
@@ -155,6 +153,7 @@ function DashboardContent() {
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing latest broker data...</p>}
           {hasPositions && (
             <p className="mt-0.5 text-sm text-muted-foreground">
               {totalValueLabel} • {totalReturnLabel}
@@ -162,7 +161,7 @@ function DashboardContent() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio("manual")} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
             <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
             {isRefreshing ? "Refreshing..." : "Refresh"}
           </Button>
