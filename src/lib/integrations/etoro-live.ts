@@ -9,7 +9,9 @@ const DEFAULT_ETORO_REAL_PORTFOLIO_PATH = "/api/v1/trading/info/portfolio"
 const DEFAULT_ETORO_REAL_PNL_PATH = "/api/v1/trading/info/real/pnl"
 const DEFAULT_ETORO_DEMO_PORTFOLIO_PATH = "/api/v1/trading/info/demo/portfolio"
 const DEFAULT_ETORO_DEMO_PNL_PATH = "/api/v1/trading/info/demo/pnl"
-const DEFAULT_ETORO_TRADE_HISTORY_PATH = "/api/v1/trading/info/trade/history"
+const DEFAULT_ETORO_REAL_TRADE_HISTORY_PATH = "/api/v1/trading/info/real/history"
+const LEGACY_ETORO_TRADE_HISTORY_PATH = "/api/v1/trading/info/trade/history"
+const DEFAULT_ETORO_DEMO_TRADE_HISTORY_PATH = "/api/v1/trading/info/demo/history"
 const USD_TO_GBP_FALLBACK_RATE = 0.79
 
 /**
@@ -83,6 +85,20 @@ type EtoroTradeHistoryRow = {
   ClosedAmount?: number
   openAmount?: number
   OpenAmount?: number
+}
+
+type EtoroHistoryResponse = EtoroApiRow[] | {
+  items?: unknown[]
+  data?: unknown[]
+  history?: unknown[]
+  trades?: unknown[]
+  positions?: unknown[]
+  totalPages?: number
+  TotalPages?: number
+  nextPage?: number | null
+  NextPage?: number | null
+  nextPagePath?: string | null
+  NextPagePath?: string | null
 }
 
 type EtoroActivityPhase = "open" | "close"
@@ -390,6 +406,25 @@ function getHistoryMinDate() {
   return date.toISOString().slice(0, 10)
 }
 
+function getEtoroTradeHistoryPaths() {
+  const configuredPaths = process.env.ETORO_TRADE_HISTORY_PATHS
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  if (configuredPaths && configuredPaths.length > 0) {
+    return configuredPaths
+  }
+
+  const mode = process.env.ETORO_ACCOUNT_MODE?.trim().toLowerCase()
+
+  if (mode === "demo") {
+    return [DEFAULT_ETORO_DEMO_TRADE_HISTORY_PATH]
+  }
+
+  return [DEFAULT_ETORO_REAL_TRADE_HISTORY_PATH, LEGACY_ETORO_TRADE_HISTORY_PATH]
+}
+
 function getEtoroActivityType(isBuy: boolean, phase: EtoroActivityPhase) {
   if (phase === "open") {
     return isBuy ? "buy" : "sell"
@@ -400,8 +435,8 @@ function getEtoroActivityType(isBuy: boolean, phase: EtoroActivityPhase) {
 
 function getEtoroHistoryPrice(row: EtoroApiRow, phase: EtoroActivityPhase) {
   return getNumberValue(row, phase === "open"
-    ? ["openRate", "OpenRate", "openingRate", "OpeningRate", "openPrice", "OpenPrice"]
-    : ["closeRate", "CloseRate", "closingRate", "ClosingRate", "closePrice", "ClosePrice"])
+    ? ["openRate", "OpenRate", "openingRate", "OpeningRate", "openPrice", "OpenPrice", "openExecutionRate", "OpenExecutionRate"]
+    : ["closeRate", "CloseRate", "closingRate", "ClosingRate", "closePrice", "ClosePrice", "closeExecutionRate", "CloseExecutionRate", "executionRate", "ExecutionRate"])
 }
 
 function getEtoroHistoryUnits(row: EtoroApiRow, phase: EtoroActivityPhase) {
@@ -472,13 +507,16 @@ function createEtoroActivityEvent(
   const normalizedRow = row as unknown as EtoroApiRow
   const instrumentId = getEtoroInstrumentId(normalizedRow)
   const metadata = instrumentId === null ? undefined : metadataByInstrumentId.get(instrumentId)
-  const timestamp = getStringValue(normalizedRow, phase === "open" ? ["openTimestamp", "OpenTimestamp"] : ["closeTimestamp", "CloseTimestamp"])
+  const timestamp = getStringValue(normalizedRow, phase === "open"
+    ? ["openTimestamp", "OpenTimestamp", "openDateTime", "OpenDateTime", "openDate", "OpenDate", "createdAt", "CreatedAt"]
+    : ["closeTimestamp", "CloseTimestamp", "closeDateTime", "CloseDateTime", "closeDate", "CloseDate", "lastUpdate", "LastUpdate", "closedAt", "ClosedAt", "updatedAt", "UpdatedAt"])
   const rowCurrencyInfo = getEtoroCurrencyInfo(getStringValue(normalizedRow, ["currency", "Currency", "currencyCode", "CurrencyCode"]))
   const priceScale = metadata?.priceScale ?? rowCurrencyInfo.priceScale
   const rawPrice = getEtoroHistoryPrice(normalizedRow, phase)
   const price = rawPrice === null ? null : normalizeEtoroPrice(rawPrice, priceScale)
   const leverage = Math.max(getNumberValue(normalizedRow, ["leverage", "Leverage"]) ?? 1, 1)
-  const isBuy = getBooleanValue(normalizedRow, ["isBuy", "IsBuy"])
+  const parsedIsBuy = getBooleanValue(normalizedRow, ["isBuy", "IsBuy", "direction", "Direction", "side", "Side"])
+  const isBuy = parsedIsBuy ?? true
 
   // Get shares — prefer explicit units fields, fall back to deriving from netProfit
   let shares = price !== null && price > 0 ? getEtoroHistoryShares(normalizedRow, phase, price, leverage) : null
@@ -520,7 +558,7 @@ function createEtoroActivityEvent(
     grossAmount = null
   }
 
-  if (instrumentId === null || !timestamp || price === null || shares === null || grossAmount === null || isBuy === null || price <= 0) {
+  if (instrumentId === null || !timestamp || price === null || shares === null || grossAmount === null || price <= 0) {
     logger.warn({
       broker: "etoro",
       phase,
@@ -530,7 +568,7 @@ function createEtoroActivityEvent(
       hasPrice: price !== null,
       hasShares: shares !== null,
       hasGrossAmount: grossAmount !== null,
-      hasIsBuy: isBuy !== null,
+      hasIsBuy: parsedIsBuy !== null,
     }, "Skipped eToro trade-history row because required fields were missing")
     return null
   }
@@ -614,6 +652,64 @@ function extractEtoroSearchRows(payload: EtoroSearchResponse): EtoroApiRow[] {
   }
 
   return []
+}
+
+function extractEtoroHistoryRows(payload: EtoroHistoryResponse): EtoroApiRow[] {
+  if (Array.isArray(payload)) {
+    return payload.filter(isRecord)
+  }
+
+  const candidates = [
+    payload.items,
+    payload.data,
+    payload.history,
+    payload.trades,
+    payload.positions,
+  ]
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter(isRecord)
+    }
+  }
+
+  return []
+}
+
+function getEtoroHistoryNextPage(payload: EtoroHistoryResponse, currentPage: number) {
+  if (Array.isArray(payload)) {
+    return null
+  }
+
+  const explicitNextPage = payload.nextPage ?? payload.NextPage
+  if (typeof explicitNextPage === "number" && Number.isFinite(explicitNextPage)) {
+    return explicitNextPage
+  }
+
+  const totalPages = payload.totalPages ?? payload.TotalPages
+  if (typeof totalPages === "number" && currentPage < totalPages) {
+    return currentPage + 1
+  }
+
+  return null
+}
+
+function getEtoroHistoryNextPath(payload: EtoroHistoryResponse) {
+  if (Array.isArray(payload)) {
+    return null
+  }
+
+  const path = payload.nextPagePath ?? payload.NextPagePath ?? null
+  if (!path) {
+    return null
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    const url = new URL(path)
+    return `${url.pathname}${url.search}`
+  }
+
+  return path.startsWith("/") ? path : `/${path}`
 }
 
 function mapEtoroSearchRowToInstrument(row: EtoroApiRow): BrokerInstrument | null {
@@ -1257,10 +1353,49 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
 
   const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
   const headers = buildEtoroHeaders(apiKey, apiSecret)
-  const historyPath = `${DEFAULT_ETORO_TRADE_HISTORY_PATH}?minDate=${encodeURIComponent(getHistoryMinDate())}&page=1&pageSize=500`
-  logger.info({ broker: "etoro", historyPath }, "Requesting eToro trade history")
-  const payload = await fetchEtoroJson<unknown[]>(baseUrl, historyPath, headers)
-  const historyRows = payload.filter(isRecord) as EtoroTradeHistoryRow[]
+  const attemptedResponses: string[] = []
+  let historyRows: EtoroTradeHistoryRow[] = []
+  let loadedHistoryPath: string | null = null
+
+  for (const baseHistoryPath of getEtoroTradeHistoryPaths()) {
+    const rows: EtoroApiRow[] = []
+    let page = 1
+    let nextPath: string | null = `${baseHistoryPath}?minDate=${encodeURIComponent(getHistoryMinDate())}&page=${page}&pageSize=500&includeNames=true`
+
+    while (nextPath) {
+      logger.info({ broker: "etoro", historyPath: nextPath }, "Requesting eToro trade history")
+
+      try {
+        const payload = await fetchEtoroJson<EtoroHistoryResponse>(baseUrl, nextPath, headers)
+        const pageRows = extractEtoroHistoryRows(payload)
+        rows.push(...pageRows)
+
+        const nextPagePath = getEtoroHistoryNextPath(payload)
+        if (nextPagePath) {
+          nextPath = nextPagePath
+        } else {
+          const nextPage = getEtoroHistoryNextPage(payload, page)
+          page = nextPage ?? page
+          nextPath = nextPage ? `${baseHistoryPath}?minDate=${encodeURIComponent(getHistoryMinDate())}&page=${nextPage}&pageSize=500&includeNames=true` : null
+        }
+      } catch (error) {
+        attemptedResponses.push(`${nextPath} -> ${error instanceof Error ? error.message : "Unknown error"}`)
+        rows.length = 0
+        break
+      }
+    }
+
+    if (rows.length > 0) {
+      historyRows = rows as EtoroTradeHistoryRow[]
+      loadedHistoryPath = baseHistoryPath
+      break
+    }
+  }
+
+  if (!loadedHistoryPath && attemptedResponses.length > 0) {
+    throw new Error(`Failed to load eToro trade history. Tried: ${attemptedResponses.join("; ")}`)
+  }
+
   const instrumentIds = Array.from(new Set(historyRows
     .map((row) => getEtoroInstrumentId(row as unknown as EtoroApiRow))
     .filter((value): value is number => value !== null)))
@@ -1291,7 +1426,7 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
     }
   }
 
-  logger.info({ broker: "etoro", historyRows: historyRows.length, historyInstrumentIds: instrumentIds.length }, "Loaded eToro trade history rows")
+  logger.info({ broker: "etoro", historyPath: loadedHistoryPath, historyRows: historyRows.length, historyInstrumentIds: instrumentIds.length }, "Loaded eToro trade history rows")
 
   const activity = historyRows.flatMap((row) => {
     const openEvent = createEtoroActivityEvent(row, "open", metadataByInstrumentId)
