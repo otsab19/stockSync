@@ -60,6 +60,7 @@ Set `NEXT_PUBLIC_DATA_BACKEND` in `.env.local`:
 NEXT_PUBLIC_DATA_BACKEND=browser       # or supabase
 NEXT_PUBLIC_SUPABASE_URL=              # required for supabase mode
 NEXT_PUBLIC_SUPABASE_ANON_KEY=         # required for supabase mode
+SUPABASE_SERVICE_ROLE_KEY=             # required for cron jobs to read/write server-side sync tables
 CRON_SECRET=                           # required for /api/cron/check-alerts
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=          # required for push notifications
 VAPID_PRIVATE_KEY=                     # required for push notifications

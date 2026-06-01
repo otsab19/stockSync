@@ -1,7 +1,7 @@
 import webpush from "web-push"
 import type { AlertJobRepository } from "@/lib/alerts/repository"
 import type { AlertJobResult } from "@/types/alerts"
-import { createClient, getSupabaseSetupMessage } from "@/utils/supabase/server"
+import { createServiceRoleClient, getSupabaseServiceRoleSetupMessage } from "@/utils/supabase/server"
 import { getBrokerProvider } from "@/lib/integrations/factory"
 import { PROFIT_ALERT_THRESHOLD_GBP } from "@/lib/alerts/thresholds"
 import type { PortfolioPosition } from "@/types/portfolio"
@@ -46,7 +46,7 @@ type SupabaseWriter = {
 }
 
 async function recordScheduledPositions(
-  supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>,
+  supabase: NonNullable<ReturnType<typeof createServiceRoleClient>>,
   userId: string,
   broker: "t212" | "etoro",
   positions: PortfolioPosition[]
@@ -105,14 +105,14 @@ async function recordScheduledPositions(
 
 export class SupabaseAlertJobRepository implements AlertJobRepository {
   async runAlertCheck(): Promise<AlertJobResult> {
-    const supabase = await createClient()
+    const supabase = createServiceRoleClient()
 
     if (!supabase) {
       return {
         success: false,
         backend: "supabase",
         error: "Setup required",
-        message: getSupabaseSetupMessage(),
+        message: getSupabaseServiceRoleSetupMessage(),
       }
     }
 

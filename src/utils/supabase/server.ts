@@ -1,9 +1,11 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { Database } from '@/types/supabase'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 export function hasSupabaseEnv() {
   return Boolean(supabaseUrl && supabaseAnonKey)
@@ -11,6 +13,10 @@ export function hasSupabaseEnv() {
 
 export function getSupabaseSetupMessage() {
   return 'Supabase environment variables are missing. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local.'
+}
+
+export function getSupabaseServiceRoleSetupMessage() {
+  return 'Supabase service role key is missing. Add SUPABASE_SERVICE_ROLE_KEY to server environment variables for cron jobs.'
 }
 
 export async function createClient() {
@@ -43,4 +49,17 @@ export async function createClient() {
       },
     }
   )
+}
+
+export function createServiceRoleClient() {
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    return null
+  }
+
+  return createSupabaseClient<Database>(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
 }
