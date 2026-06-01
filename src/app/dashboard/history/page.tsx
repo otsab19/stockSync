@@ -260,7 +260,7 @@ type TableGroupBy = "none" | "ticker" | "broker" | "type"
 function HistoryTransactionsTable({ activity }: { activity: PortfolioActivityEvent[] }) {
   const [sortCol, setSortCol] = useState<TableSortCol>("timestamp")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
-  const [groupBy, setGroupBy] = useState<TableGroupBy>("ticker")
+  const [groupBy, setGroupBy] = useState<TableGroupBy>("broker")
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
   function handleSort(col: TableSortCol) {

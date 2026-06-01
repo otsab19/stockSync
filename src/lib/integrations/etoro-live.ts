@@ -355,6 +355,7 @@ function mapInstrumentMetadataRow(row: EtoroApiRow): EtoroInstrumentMetadata | n
     "exchangeName", "ExchangeName", "exchange", "Exchange",
     "exchangeDescription", "ExchangeDescription",
     "market", "Market", "marketName", "MarketName",
+    "priceSource", "PriceSource",
   ])
 
   const isLikelyLse = Boolean(
@@ -514,8 +515,51 @@ function createEtoroActivityEvent(
   const timestamp = getStringValue(normalizedRow, phase === "open"
     ? ["openTimestamp", "OpenTimestamp", "openDateTime", "OpenDateTime", "openDate", "OpenDate", "createdAt", "CreatedAt"]
     : ["closeTimestamp", "CloseTimestamp", "closeDateTime", "CloseDateTime", "closeDate", "CloseDate", "lastUpdate", "LastUpdate", "closedAt", "ClosedAt", "updatedAt", "UpdatedAt"])
+  const historyTicker = getStringValue(normalizedRow, [
+    "symbolFull",
+    "SymbolFull",
+    "internalSymbolFull",
+    "InternalSymbolFull",
+    "ticker",
+    "Ticker",
+    "symbol",
+    "Symbol",
+    "displaySymbol",
+    "DisplaySymbol",
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
+    "instrumentName",
+    "InstrumentName",
+  ])
+  const historyCompanyName = getStringValue(normalizedRow, [
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
+    "instrumentName",
+    "InstrumentName",
+    "displayName",
+    "DisplayName",
+    "name",
+    "Name",
+    "companyName",
+    "CompanyName",
+  ])
+  const historyPriceSource = getStringValue(normalizedRow, ["priceSource", "PriceSource"])
+  const historyExchangeName = getStringValue(normalizedRow, [
+    "exchangeName", "ExchangeName", "exchange", "Exchange",
+    "exchangeDescription", "ExchangeDescription",
+    "market", "Market", "marketName", "MarketName",
+  ])
+  const historyExchangeId = getNumberValue(normalizedRow, ["exchangeID", "ExchangeID", "exchangeId", "ExchangeId"])
+  const isHistoryLse = Boolean(
+    historyTicker?.match(/\.(L|LSE|LON)$/i)
+    || historyTicker?.match(/^[A-Z]+l$/)
+    || historyPriceSource?.match(/\b(LSE|London|LON)\b/i)
+    || historyExchangeName?.match(/\b(LSE|London|LON)\b/i)
+    || historyExchangeId === 1
+    || historyExchangeId === 46
+  )
   const rowCurrencyInfo = getEtoroCurrencyInfo(getStringValue(normalizedRow, ["currency", "Currency", "currencyCode", "CurrencyCode"]))
-  const priceScale = metadata?.priceScale ?? rowCurrencyInfo.priceScale
+  const priceScale = metadata?.priceScale ?? (metadata?.currency === "GBP" || isHistoryLse ? "gbx" : rowCurrencyInfo.priceScale)
   const rawPrice = getEtoroHistoryPrice(normalizedRow, phase)
   const price = rawPrice === null ? null : normalizeEtoroPrice(rawPrice, priceScale)
   const leverage = Math.max(getNumberValue(normalizedRow, ["leverage", "Leverage"]) ?? 1, 1)
@@ -577,36 +621,8 @@ function createEtoroActivityEvent(
     return null
   }
 
-  const nativeCurrency = metadata?.currency ?? rowCurrencyInfo.currency ?? "USD"
+  const nativeCurrency = metadata?.currency ?? (isHistoryLse ? "GBP" : rowCurrencyInfo.currency ?? "USD")
   const isLse = metadata?.priceScale === "gbx" || nativeCurrency === "GBP" || priceScale === "gbx"
-  const historyTicker = getStringValue(normalizedRow, [
-    "symbolFull",
-    "SymbolFull",
-    "internalSymbolFull",
-    "InternalSymbolFull",
-    "ticker",
-    "Ticker",
-    "symbol",
-    "Symbol",
-    "displaySymbol",
-    "DisplaySymbol",
-    "instrumentDisplayName",
-    "InstrumentDisplayName",
-    "instrumentName",
-    "InstrumentName",
-  ])
-  const historyCompanyName = getStringValue(normalizedRow, [
-    "instrumentDisplayName",
-    "InstrumentDisplayName",
-    "instrumentName",
-    "InstrumentName",
-    "displayName",
-    "DisplayName",
-    "name",
-    "Name",
-    "companyName",
-    "CompanyName",
-  ])
   const rawTicker = metadata?.ticker ?? historyTicker ?? `ET${instrumentId}`
   const ticker = cleanEtoroTicker(rawTicker, isLse)
   const companyName = metadata?.companyName ?? historyCompanyName ?? ticker

@@ -181,5 +181,48 @@ describe("eToro live mapper", () => {
     expect(activity.map((event) => event.ticker)).toEqual(["NVDA", "NVDA"])
     expect(activity.map((event) => event.companyName)).toEqual(["NVIDIA Corporation", "NVIDIA Corporation"])
   })
+
+  it("treats LSE history prices as pence when metadata is unavailable", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+
+      if (requestUrl.includes("/trading/info/trade/history")) {
+        return Response.json([
+          {
+            instrumentID: 2072,
+            symbolFull: "RR.L",
+            instrumentDisplayName: "Rolls-Royce Holdings",
+            isBuy: true,
+            openTimestamp: "2026-06-01T09:00:00Z",
+            closeTimestamp: "2026-06-01T15:00:00Z",
+            openRate: 1000,
+            closeRate: 1324,
+            units: 1,
+            investment: 1000,
+          },
+        ])
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return new Response("metadata unavailable", { status: 500 })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const activity = await fetchEtoroActivityFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+    const sell = activity.find((event) => event.type === "sell")
+
+    expect(sell?.ticker).toBe("RR")
+    expect(sell?.nativeCurrency).toBe("GBP")
+    expect(sell?.price).toBe(13.24)
+    expect(sell?.grossAmountGbp).toBe(13.24)
+  })
 })
 
