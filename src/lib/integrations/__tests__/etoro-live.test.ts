@@ -225,6 +225,46 @@ describe("eToro live mapper", () => {
     expect(sell?.grossAmountGbp).toBe(13.24)
   })
 
+  it("infers pence pricing for UK history rows without an exchange suffix", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+
+      if (requestUrl.includes("/trading/info/trade/history")) {
+        return Response.json([
+          {
+            instrumentID: 9453,
+            instrumentDisplayName: "Rolls-Royce Holdings",
+            isBuy: true,
+            openTimestamp: "2026-06-01T09:00:00Z",
+            closeTimestamp: "2026-06-01T15:00:00Z",
+            openRate: 1000,
+            closeRate: 1324,
+            units: 1,
+            investment: 13,
+          },
+        ])
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return new Response("metadata unavailable", { status: 500 })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const activity = await fetchEtoroActivityFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+    const sell = activity.find((event) => event.type === "sell")
+
+    expect(sell?.price).toBe(13.24)
+    expect(sell?.grossAmountGbp).toBe(13.24)
+  })
+
   it("uses fresh eToro request IDs across history and metadata calls", async () => {
     const requestIds: string[] = []
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {

@@ -488,6 +488,49 @@ function deriveEtoroHistoryGrossAmount(row: EtoroApiRow, phase: EtoroActivityPha
   return null
 }
 
+function inferEtoroHistoryPriceScale(params: {
+  metadata?: EtoroInstrumentMetadata
+  isHistoryLse: boolean
+  rowCurrencyInfo: ReturnType<typeof getEtoroCurrencyInfo>
+  rawOpenRate: number | null
+  rawCloseRate: number | null
+  units: number | null
+  investment: number | null
+}) {
+  if (params.metadata?.priceScale === "gbx") {
+    return "gbx" as const
+  }
+
+  if (params.isHistoryLse || params.metadata?.currency === "GBP") {
+    return "gbx" as const
+  }
+
+  if (params.rowCurrencyInfo.priceScale === "gbx") {
+    return "gbx" as const
+  }
+
+  const rawRate = params.rawOpenRate ?? params.rawCloseRate
+
+  if (
+    rawRate !== null
+    && params.units !== null
+    && params.units > 0
+    && params.investment !== null
+    && params.investment > 0
+  ) {
+    const notionalStandard = params.units * rawRate
+    const notionalGbx = params.units * (rawRate / 100)
+    const ratioStandard = notionalStandard / params.investment
+    const ratioGbx = notionalGbx / params.investment
+
+    if (ratioGbx >= 0.25 && ratioGbx <= 4 && (ratioStandard > 12 || ratioStandard < 0.08)) {
+      return "gbx" as const
+    }
+  }
+
+  return params.metadata?.priceScale ?? params.rowCurrencyInfo.priceScale
+}
+
 function getEtoroHistoryShares(row: EtoroApiRow, phase: EtoroActivityPhase, price: number, leverage: number) {
   const units = getEtoroHistoryUnits(row, phase)
 
@@ -559,8 +602,35 @@ function createEtoroActivityEvent(
     || historyExchangeId === 46
   )
   const rowCurrencyInfo = getEtoroCurrencyInfo(getStringValue(normalizedRow, ["currency", "Currency", "currencyCode", "CurrencyCode"]))
-  const priceScale = metadata?.priceScale ?? (metadata?.currency === "GBP" || isHistoryLse ? "gbx" : rowCurrencyInfo.priceScale)
-  const rawPrice = getEtoroHistoryPrice(normalizedRow, phase)
+  const rawOpenRate = getEtoroHistoryPrice(normalizedRow, "open")
+  const rawCloseRate = getEtoroHistoryPrice(normalizedRow, "close")
+  const historyUnits = getEtoroHistoryUnits(normalizedRow, phase)
+    ?? getEtoroHistoryUnits(normalizedRow, "open")
+    ?? getEtoroHistoryUnits(normalizedRow, "close")
+  const historyInvestment = getNumberValue(normalizedRow, [
+    "investment",
+    "Investment",
+    "initialInvestment",
+    "InitialInvestment",
+    "amount",
+    "Amount",
+    "openAmount",
+    "OpenAmount",
+    "investedAmount",
+    "InvestedAmount",
+    "requestedAmount",
+    "RequestedAmount",
+  ])
+  const priceScale = inferEtoroHistoryPriceScale({
+    metadata,
+    isHistoryLse,
+    rowCurrencyInfo,
+    rawOpenRate,
+    rawCloseRate,
+    units: historyUnits,
+    investment: historyInvestment,
+  })
+  const rawPrice = phase === "open" ? rawOpenRate : rawCloseRate
   const price = rawPrice === null ? null : normalizeEtoroPrice(rawPrice, priceScale)
   const leverage = Math.max(getNumberValue(normalizedRow, ["leverage", "Leverage"]) ?? 1, 1)
   const parsedIsBuy = getBooleanValue(normalizedRow, ["isBuy", "IsBuy", "direction", "Direction", "side", "Side"])
@@ -572,19 +642,19 @@ function createEtoroActivityEvent(
   // Fallback: derive shares from netProfit and open/close rates if no explicit units/amount
   if (shares === null && phase === "close") {
     const netProfit = getNumberValue(normalizedRow, ["netProfit", "NetProfit", "profit", "Profit", "pnl", "Pnl", "PnL"])
-    const openRate = getNumberValue(normalizedRow, ["openRate", "OpenRate"])
-    const closeRate = getNumberValue(normalizedRow, ["closeRate", "CloseRate"])
-    if (netProfit !== null && openRate !== null && closeRate !== null && closeRate !== openRate) {
-      shares = Math.abs(netProfit * leverage / (closeRate - openRate))
+    const normalizedOpenRate = rawOpenRate === null ? null : normalizeEtoroPrice(rawOpenRate, priceScale)
+    const normalizedCloseRate = rawCloseRate === null ? null : normalizeEtoroPrice(rawCloseRate, priceScale)
+    if (netProfit !== null && normalizedOpenRate !== null && normalizedCloseRate !== null && normalizedCloseRate !== normalizedOpenRate) {
+      shares = Math.abs(netProfit * leverage / (normalizedCloseRate - normalizedOpenRate))
     }
   }
   // For open phase: if we can derive from netProfit on the close side, use those same units
   if (shares === null && phase === "open") {
     const netProfit = getNumberValue(normalizedRow, ["netProfit", "NetProfit", "profit", "Profit", "pnl", "Pnl", "PnL"])
-    const openRate = getNumberValue(normalizedRow, ["openRate", "OpenRate"])
-    const closeRate = getNumberValue(normalizedRow, ["closeRate", "CloseRate"])
-    if (netProfit !== null && openRate !== null && closeRate !== null && closeRate !== openRate) {
-      shares = Math.abs(netProfit * leverage / (closeRate - openRate))
+    const normalizedOpenRate = rawOpenRate === null ? null : normalizeEtoroPrice(rawOpenRate, priceScale)
+    const normalizedCloseRate = rawCloseRate === null ? null : normalizeEtoroPrice(rawCloseRate, priceScale)
+    if (netProfit !== null && normalizedOpenRate !== null && normalizedCloseRate !== null && normalizedCloseRate !== normalizedOpenRate) {
+      shares = Math.abs(netProfit * leverage / (normalizedCloseRate - normalizedOpenRate))
     }
   }
 
@@ -621,7 +691,7 @@ function createEtoroActivityEvent(
     return null
   }
 
-  const nativeCurrency = metadata?.currency ?? (isHistoryLse ? "GBP" : rowCurrencyInfo.currency ?? "USD")
+  const nativeCurrency = metadata?.currency ?? (isHistoryLse || priceScale === "gbx" ? "GBP" : rowCurrencyInfo.currency ?? "USD")
   const isLse = metadata?.priceScale === "gbx" || nativeCurrency === "GBP" || priceScale === "gbx"
   const rawTicker = metadata?.ticker ?? historyTicker ?? `ET${instrumentId}`
   const ticker = cleanEtoroTicker(rawTicker, isLse)
@@ -1501,15 +1571,16 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
     // Non-critical — just won't have rate-based pence detection
   }
 
-  // Post-process metadata: use live rates to detect pence-priced instruments
-  // that the metadata endpoint didn't identify as GBp
+  // Post-process metadata: only treat high live rates as pence when the instrument looks UK/LSE.
   for (const [id, metadata] of metadataByInstrumentId) {
     if (metadata.priceScale === "standard" && metadata.currency === "USD") {
       const rate = ratesByInstrumentId.get(id)
-      // If live price > 200, this is almost certainly a pence-denominated UK stock
-      // (no real USD stock trades at >$200 per share commonly, but UK pence prices of 200-5000 are normal)
-      // More conservative: >500 is very likely pence
-      if (rate?.livePrice && rate.livePrice > 200) {
+      const isLikelyLse = Boolean(
+        metadata.ticker?.match(/\.(L|LSE|LON)$/i)
+        || metadata.ticker?.match(/^[A-Z]+l$/)
+      )
+
+      if (isLikelyLse && rate?.livePrice && rate.livePrice > 200) {
         logger.info({ broker: "etoro", instrumentId: id, ticker: metadata.ticker, livePrice: rate.livePrice }, "Detected likely GBX instrument from live rate magnitude")
         metadata.currency = "GBP"
         metadata.priceScale = "gbx"

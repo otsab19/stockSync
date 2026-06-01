@@ -105,6 +105,51 @@ function getTimeRangeStart(range: ActivityTimeRange) {
   }
 }
 
+function dedupeActivityEvents(activity: PortfolioActivityEvent[]) {
+  const seen = new Set<string>()
+  return activity.filter((event) => {
+    if (seen.has(event.id)) return false
+    seen.add(event.id)
+    return true
+  })
+}
+
+function buildHistoryVolumeStats(activity: PortfolioActivityEvent[]) {
+  const events = dedupeActivityEvents(activity)
+  const etoroPositionIds = new Set<string>()
+  let buyVolumeGbp = 0
+  let sellVolumeGbp = 0
+  let buyCount = 0
+  let sellCount = 0
+  let nonEtoroTradeCount = 0
+
+  events.forEach((event) => {
+    if (event.broker === "etoro") {
+      const positionId = event.id.split(":")[1]
+      if (positionId) etoroPositionIds.add(positionId)
+    } else {
+      nonEtoroTradeCount += 1
+    }
+
+    if (event.type === "buy") {
+      buyVolumeGbp += event.grossAmountGbp
+      buyCount += 1
+    } else {
+      sellVolumeGbp += event.grossAmountGbp
+      sellCount += 1
+    }
+  })
+
+  return {
+    buyVolumeGbp,
+    sellVolumeGbp,
+    buyCount,
+    sellCount,
+    completedTradeCount: etoroPositionIds.size + nonEtoroTradeCount,
+    orderLegCount: events.length,
+  }
+}
+
 function filterHistoryActivity(activity: PortfolioActivityEvent[], filters: HistoryFilterState) {
   const search = filters.searchQuery.trim().toLowerCase()
   const rangeStart = getTimeRangeStart(filters.timeRange)
@@ -421,12 +466,13 @@ export default function DashboardHistoryPage() {
   }, [fetchPortfolio])
 
   const portfolio = useMemo(() => portfolioResponse?.status === "ok" ? portfolioResponse.portfolio : [], [portfolioResponse])
-  const rawActivity = useMemo(
-    () => portfolioResponse?.status === "ok"
+  const rawActivity = useMemo(() => {
+    const activity = portfolioResponse?.status === "ok"
       ? (portfolioResponse.activity ?? portfolioResponse.insights.activity ?? [])
-      : [],
-    [portfolioResponse]
-  )
+      : []
+    return dedupeActivityEvents(activity)
+  }, [portfolioResponse])
+  const volumeStats = useMemo(() => buildHistoryVolumeStats(rawActivity), [rawActivity])
   const availableBrokers = useMemo(
     () => Array.from(new Map<BrokerId, { broker: BrokerId; label: string }>([
       ...portfolio.map((p) => [p.broker, { broker: p.broker, label: p.brokerLabel }] as const),
@@ -481,6 +527,8 @@ export default function DashboardHistoryPage() {
 
   const totalBuyValueGbp = displayActivity.filter((e) => e.type === "buy").reduce((sum, e) => sum + e.grossAmountGbp, 0)
   const totalSellValueGbp = displayActivity.filter((e) => e.type === "sell").reduce((sum, e) => sum + e.grossAmountGbp, 0)
+  const filteredBuyCount = displayActivity.filter((e) => e.type === "buy").length
+  const filteredSellCount = displayActivity.filter((e) => e.type === "sell").length
 
   // Realized P&L: prefer explicit realisedProfitGbp from broker (T212 provides this on sells)
   // Fall back to per-ticker net for tickers with both buys and sells
@@ -510,7 +558,7 @@ export default function DashboardHistoryPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Showing {displayActivity.length} of {rawActivity.length} trade{rawActivity.length === 1 ? "" : "s"}
+            Showing {displayActivity.length} of {volumeStats.completedTradeCount} completed trade{volumeStats.completedTradeCount === 1 ? "" : "s"} ({volumeStats.orderLegCount} order legs)
           </p>
           {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers (T212 history may take ~30s due to rate limits)...</p>}
         </div>
@@ -528,18 +576,19 @@ export default function DashboardHistoryPage() {
           <p className="mt-1 text-xs text-muted-foreground">From completed trades</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total bought</p>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Buy volume</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(totalBuyValueGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{displayActivity.filter((e) => e.type === "buy").length} buy orders</p>
+          <p className="mt-1 text-xs text-muted-foreground">{filteredBuyCount} buy leg{filteredBuyCount === 1 ? "" : "s"} · cumulative across re-buys</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total sold</p>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Sell volume</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(totalSellValueGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{displayActivity.filter((e) => e.type === "sell").length} sell orders</p>
+          <p className="mt-1 text-xs text-muted-foreground">{filteredSellCount} sell leg{filteredSellCount === 1 ? "" : "s"} · cumulative across exits</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total trades</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{displayActivity.length}</p>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Completed trades</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{volumeStats.completedTradeCount}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{volumeStats.orderLegCount} buy/sell legs in total</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Win rate</p>
