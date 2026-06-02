@@ -359,19 +359,19 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
                   </TableRow>
                   {!collapsedGroups.has(group.key) && group.cycles.flatMap((cycle) => {
                     const rows = []
-                    if (cycle.buy) {
+                    cycle.buys.forEach((buy, buyIndex) => {
                       rows.push(
-                        <TableRow key={`${cycle.id}:buy`} className="bg-white/[0.01]">
+                        <TableRow key={`${cycle.id}:buy:${buyIndex}`} className="bg-white/[0.01]">
                           <TableCell><span className="text-xs font-medium text-emerald-400">Buy</span></TableCell>
-                          <TableCell><span className="text-xs">{formatLongDateTime(cycle.buy.timestamp)}</span></TableCell>
+                          <TableCell><span className="text-xs">{formatLongDateTime(buy.timestamp)}</span></TableCell>
                           <TableCell><span className="text-xs text-muted-foreground">{cycle.brokerLabel}</span></TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(cycle.buy.shares)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(cycle.buy.price, cycle.buy.nativeCurrency)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatMoney(cycle.buy.grossAmountGbp, "GBP")}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(buy.shares)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(buy.price, buy.nativeCurrency)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatMoney(buy.grossAmountGbp, "GBP")}</TableCell>
                           <TableCell />
                         </TableRow>
                       )
-                    }
+                    })
                     if (cycle.sell) {
                       rows.push(
                         <TableRow key={`${cycle.id}:sell`} className="border-b border-white/[0.06] bg-white/[0.01]">

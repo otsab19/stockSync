@@ -398,9 +398,17 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
   const orderId = getStringValue(row, ["order.id", "fill.id", "id", "orderId"])
   const realisedPL = getNumberValue(row, [
     "fill.walletImpact.realisedProfitLoss",
+    "fill.walletImpact.realizedProfitLoss",
+    "fill.walletImpact.realisedProfit",
+    "fill.walletImpact.realizedProfit",
     "walletImpact.realisedProfitLoss",
+    "walletImpact.realizedProfitLoss",
+    "walletImpact.realisedProfit",
+    "walletImpact.realizedProfit",
     "realisedProfitLoss",
     "realizedProfitLoss",
+    "realisedProfit",
+    "realizedProfit",
   ])
 
   return {

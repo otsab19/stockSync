@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildTradeCycles, computeTradeCyclePl, groupTradeCyclesByStock } from "@/lib/dashboard/trade-cycles"
+import { buildTradeCycles, groupTradeCyclesByStock } from "@/lib/dashboard/trade-cycles"
 import type { PortfolioActivityEvent } from "@/types/portfolio"
 
 function makeEvent(overrides: Partial<PortfolioActivityEvent> & Pick<PortfolioActivityEvent, "id" | "type">): PortfolioActivityEvent {
@@ -44,28 +44,60 @@ describe("trade cycles", () => {
 
     expect(cycles).toHaveLength(1)
     expect(cycles[0].plGbp).toBe(10)
-    expect(cycles[0].buy?.orderType).toBe("Open")
+    expect(cycles[0].buys[0]?.orderType).toBe("Open")
     expect(cycles[0].sell?.orderType).toBe("Close")
   })
 
-  it("matches trading 212 buys and sells in fifo order", () => {
+  it("matches trading 212 buys and sells with equal share counts", () => {
     const activity = [
-      makeEvent({ id: "t212:buy-1", type: "buy", timestamp: "2026-06-01T09:00:00Z", grossAmountGbp: 50 }),
-      makeEvent({ id: "t212:sell-1", type: "sell", timestamp: "2026-06-01T12:00:00Z", grossAmountGbp: 60 }),
+      makeEvent({ id: "t212:buy-1", type: "buy", timestamp: "2026-06-01T09:00:00Z", shares: 10, grossAmountGbp: 50 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", timestamp: "2026-06-01T12:00:00Z", shares: 10, grossAmountGbp: 60 }),
     ]
 
     const cycles = buildTradeCycles(activity)
 
     expect(cycles).toHaveLength(1)
-    expect(computeTradeCyclePl(cycles[0].buy, cycles[0].sell)).toBe(10)
+    expect(cycles[0].plGbp).toBe(10)
+  })
+
+  it("uses share-based fifo when a sell closes more shares than one buy lot", () => {
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", timestamp: "2026-01-01T09:00:00Z", shares: 100, grossAmountGbp: 1000 }),
+      makeEvent({ id: "t212:buy-2", type: "buy", timestamp: "2026-01-02T09:00:00Z", shares: 200, grossAmountGbp: 1600 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", timestamp: "2026-01-03T09:00:00Z", shares: 250, grossAmountGbp: 1750 }),
+    ]
+
+    const cycles = buildTradeCycles(activity)
+    const sellCycle = cycles.find((cycle) => cycle.sell?.id === "t212:sell-1")
+
+    expect(sellCycle?.buys).toHaveLength(2)
+    expect(sellCycle?.plGbp).toBeCloseTo(-450, 2)
+  })
+
+  it("prefers broker-reported realised profit on sells", () => {
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", timestamp: "2026-01-01T09:00:00Z", shares: 100, grossAmountGbp: 1000 }),
+      makeEvent({
+        id: "t212:sell-1",
+        type: "sell",
+        timestamp: "2026-01-03T09:00:00Z",
+        shares: 250,
+        grossAmountGbp: 1750,
+        realisedProfitGbp: -123.45,
+      }),
+    ]
+
+    const cycles = buildTradeCycles(activity)
+
+    expect(cycles.find((cycle) => cycle.sell?.id === "t212:sell-1")?.plGbp).toBe(-123.45)
   })
 
   it("groups cycles by stock and sums p/l", () => {
     const activity = [
-      makeEvent({ id: "t212:buy-1", type: "buy", grossAmountGbp: 50 }),
-      makeEvent({ id: "t212:sell-1", type: "sell", grossAmountGbp: 60 }),
-      makeEvent({ id: "t212:buy-2", type: "buy", grossAmountGbp: 20 }),
-      makeEvent({ id: "t212:sell-2", type: "sell", grossAmountGbp: 15 }),
+      makeEvent({ id: "t212:buy-1", type: "buy", shares: 10, grossAmountGbp: 50 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", shares: 10, grossAmountGbp: 60 }),
+      makeEvent({ id: "t212:buy-2", type: "buy", shares: 10, grossAmountGbp: 20 }),
+      makeEvent({ id: "t212:sell-2", type: "sell", shares: 10, grossAmountGbp: 15 }),
     ]
 
     const groups = groupTradeCyclesByStock(buildTradeCycles(activity))

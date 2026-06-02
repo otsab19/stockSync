@@ -1,15 +1,22 @@
 import type { BrokerId, PortfolioActivityEvent } from "@/types/portfolio"
 
+const SHARE_EPSILON = 0.000001
+
 export type TradeCycle = {
   id: string
   ticker: string
   companyName: string
   broker: BrokerId
   brokerLabel: string
-  buy?: PortfolioActivityEvent
+  buys: PortfolioActivityEvent[]
   sell?: PortfolioActivityEvent
   plGbp: number | null
   latestTimestamp: string
+}
+
+type OpenLot = {
+  event: PortfolioActivityEvent
+  remainingShares: number
 }
 
 function getEtoroPositionId(event: PortfolioActivityEvent) {
@@ -32,10 +39,11 @@ export function computeTradeCyclePl(buy: PortfolioActivityEvent | undefined, sel
 
 function createTradeCycle(
   id: string,
-  buy: PortfolioActivityEvent | undefined,
-  sell: PortfolioActivityEvent | undefined
+  buys: PortfolioActivityEvent[],
+  sell: PortfolioActivityEvent | undefined,
+  plGbp: number | null
 ): TradeCycle | null {
-  const anchor = sell ?? buy
+  const anchor = sell ?? buys[0]
   if (!anchor) return null
 
   return {
@@ -44,11 +52,77 @@ function createTradeCycle(
     companyName: anchor.companyName,
     broker: anchor.broker,
     brokerLabel: anchor.brokerLabel,
-    buy,
+    buys,
     sell,
-    plGbp: computeTradeCyclePl(buy, sell),
-    latestTimestamp: sell?.timestamp ?? buy?.timestamp ?? anchor.timestamp,
+    plGbp,
+    latestTimestamp: sell?.timestamp ?? buys[buys.length - 1]?.timestamp ?? anchor.timestamp,
   }
+}
+
+function matchSellAgainstFifoQueue(queue: OpenLot[], sell: PortfolioActivityEvent) {
+  let remainingSellShares = sell.shares
+  let costBasisGbp = 0
+  const consumedBuys: PortfolioActivityEvent[] = []
+
+  while (remainingSellShares > SHARE_EPSILON && queue.length > 0) {
+    const lot = queue[0]
+    const matchedShares = Math.min(remainingSellShares, lot.remainingShares)
+    costBasisGbp += lot.event.grossAmountGbp * (matchedShares / lot.event.shares)
+
+    if (!consumedBuys.includes(lot.event)) {
+      consumedBuys.push(lot.event)
+    }
+
+    lot.remainingShares -= matchedShares
+    remainingSellShares -= matchedShares
+
+    if (lot.remainingShares <= SHARE_EPSILON) {
+      queue.shift()
+    }
+  }
+
+  const matchedSellShares = sell.shares - remainingSellShares
+  const proceedsGbp = matchedSellShares > 0
+    ? sell.grossAmountGbp * (matchedSellShares / sell.shares)
+    : 0
+
+  const plGbp = sell.realisedProfitGbp !== undefined
+    ? sell.realisedProfitGbp
+    : proceedsGbp - costBasisGbp
+
+  return { buys: consumedBuys, plGbp }
+}
+
+function buildBrokerFifoCycles(sortedEvents: PortfolioActivityEvent[]) {
+  const cycles: TradeCycle[] = []
+  const buyQueues = new Map<string, OpenLot[]>()
+
+  sortedEvents.forEach((event) => {
+    const bucketKey = `${event.ticker}:${event.broker}`
+
+    if (event.type === "buy") {
+      const queue = buyQueues.get(bucketKey) ?? []
+      queue.push({ event, remainingShares: event.shares })
+      buyQueues.set(bucketKey, queue)
+      return
+    }
+
+    const queue = buyQueues.get(bucketKey) ?? []
+    const { buys, plGbp } = matchSellAgainstFifoQueue(queue, event)
+    buyQueues.set(bucketKey, queue)
+
+    const cycle = createTradeCycle(`${bucketKey}:${event.id}`, buys, event, plGbp)
+    if (cycle) cycles.push(cycle)
+  })
+
+  buyQueues.forEach((queue, bucketKey) => {
+    queue.forEach((lot) => {
+      const cycle = createTradeCycle(`${bucketKey}:${lot.event.id}:open`, [lot.event], undefined, null)
+      if (cycle) cycles.push(cycle)
+    })
+  })
+
+  return cycles
 }
 
 export function buildTradeCycles(activity: PortfolioActivityEvent[]): TradeCycle[] {
@@ -70,37 +144,21 @@ export function buildTradeCycles(activity: PortfolioActivityEvent[]): TradeCycle
   })
 
   etoroPairs.forEach((pair, positionId) => {
-    const cycle = createTradeCycle(`etoro-cycle:${positionId}`, pair.open, pair.close)
+    const buys = pair.open ? [pair.open] : []
+    const cycle = createTradeCycle(
+      `etoro-cycle:${positionId}`,
+      buys,
+      pair.close,
+      computeTradeCyclePl(pair.open, pair.close)
+    )
     if (cycle) cycles.push(cycle)
   })
 
   const sortedOtherEvents = [...otherEvents].sort(
     (left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()
   )
-  const buyQueues = new Map<string, PortfolioActivityEvent[]>()
 
-  sortedOtherEvents.forEach((event) => {
-    const bucketKey = `${event.ticker}:${event.broker}`
-
-    if (event.type === "buy") {
-      const queue = buyQueues.get(bucketKey) ?? []
-      queue.push(event)
-      buyQueues.set(bucketKey, queue)
-      return
-    }
-
-    const queue = buyQueues.get(bucketKey) ?? []
-    const matchedBuy = queue.shift()
-    const cycle = createTradeCycle(`${bucketKey}:${event.id}`, matchedBuy, event)
-    if (cycle) cycles.push(cycle)
-  })
-
-  buyQueues.forEach((queue, bucketKey) => {
-    queue.forEach((buy) => {
-      const cycle = createTradeCycle(`${bucketKey}:${buy.id}:open`, buy, undefined)
-      if (cycle) cycles.push(cycle)
-    })
-  })
+  cycles.push(...buildBrokerFifoCycles(sortedOtherEvents))
 
   return cycles.sort(
     (left, right) => new Date(right.latestTimestamp).getTime() - new Date(left.latestTimestamp).getTime()
