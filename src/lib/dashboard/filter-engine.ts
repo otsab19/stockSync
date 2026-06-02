@@ -111,8 +111,11 @@ export function filterActivity(activity: PortfolioActivityEvent[], portfolio: Po
 
 export function buildLivePortfolioStats(portfolio: PortfolioPosition[]) {
   const totalPortfolioValueGbp = portfolio.reduce((sum, position) => sum + position.normalizedTotalValueGbp, 0)
+  const totalInvestedGbp = portfolio.reduce(
+    (sum, position) => sum + position.shares * position.avgPrice * position.fxRateToGbp,
+    0
+  )
   const unrealisedReturnGbp = portfolio.reduce((sum, position) => sum + position.totalPL, 0)
-  const totalInvestedGbp = totalPortfolioValueGbp - unrealisedReturnGbp
 
   return {
     totalInvestedGbp,

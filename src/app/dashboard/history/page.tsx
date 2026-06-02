@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { buildLivePortfolioStats, formatMoney } from "@/lib/dashboard/filter-engine"
+import { buildTradeCycles, groupTradeCyclesByStock } from "@/lib/dashboard/trade-cycles"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
 import type { BrokerId, PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portfolio"
 
@@ -288,126 +289,104 @@ function shouldShowCompanyName(event: PortfolioActivityEvent) {
   return event.companyName.trim().toUpperCase() !== event.ticker.trim().toUpperCase()
 }
 
-type TableSortCol = "timestamp" | "ticker" | "shares" | "price" | "gross"
-type TableGroupBy = "none" | "ticker" | "broker" | "type"
-
-function HistoryTransactionsTable({ activity }: { activity: PortfolioActivityEvent[] }) {
-  const [sortCol, setSortCol] = useState<TableSortCol>("timestamp")
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
-  const [groupBy, setGroupBy] = useState<TableGroupBy>("broker")
+function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEvent[] }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
-  function handleSort(col: TableSortCol) {
-    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc")
-    else { setSortCol(col); setSortDir("desc") }
-  }
-
-  const sorted = useMemo(() => {
-    const dir = sortDir === "asc" ? 1 : -1
-    return [...activity].sort((a, b) => {
-      switch (sortCol) {
-        case "ticker": return a.ticker.localeCompare(b.ticker) * dir
-        case "shares": return (a.shares - b.shares) * dir
-        case "price": return (a.price - b.price) * dir
-        case "gross": return (a.grossAmountGbp - b.grossAmountGbp) * dir
-        default: return (new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()) * dir
-      }
-    })
-  }, [activity, sortCol, sortDir])
-
-  const groups = useMemo(() => {
-    if (groupBy === "none") return new Map([["All", sorted]])
-    const map = new Map<string, PortfolioActivityEvent[]>()
-    for (const e of sorted) {
-      const key = groupBy === "ticker" ? e.ticker
-        : groupBy === "broker" ? e.brokerLabel
-        : e.type === "buy" ? "Buys" : "Sells"
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(e)
-    }
-    return map
-  }, [sorted, groupBy])
+  const stockGroups = useMemo(
+    () => groupTradeCyclesByStock(buildTradeCycles(activity)),
+    [activity]
+  )
 
   function toggleGroup(key: string) {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
+    setCollapsedGroups((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
 
-  function renderSortHeader(col: TableSortCol, label: string, align?: string) {
+  function renderPlCell(value: number | null) {
+    if (value === null) return <span className="text-xs text-muted-foreground">—</span>
     return (
-      <TableHead className={`min-w-[70px] cursor-pointer select-none ${align ?? ""}`} onClick={() => handleSort(col)}>
-        {label} {sortCol === col ? (sortDir === "asc" ? "↑" : "↓") : ""}
-      </TableHead>
+      <span className={`text-xs font-semibold tabular-nums ${value >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+        {formatSignedMoney(value)}
+      </span>
     )
   }
 
   return (
     <Card className="border-white/10">
-      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
-        <CardTitle className="text-base">Transactions ({activity.length})</CardTitle>
-        <select
-          value={groupBy}
-          onChange={(e) => { setGroupBy(e.target.value as TableGroupBy); setCollapsedGroups(new Set()) }}
-          className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
-        >
-          <option value="none">No grouping</option>
-          <option value="ticker">Group by stock</option>
-          <option value="broker">Group by broker</option>
-          <option value="type">Group by buy/sell</option>
-        </select>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Transactions ({activity.length} legs · {stockGroups.reduce((sum, group) => sum + group.cycles.length, 0)} round trips)</CardTitle>
+        <CardDescription>Grouped by stock with buy/sell pairs and P/L per round trip.</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
         <div className="max-h-[65vh] overflow-auto">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
-                {renderSortHeader("timestamp", "Date")}
-                <TableHead className="min-w-[60px]">Broker</TableHead>
-                {renderSortHeader("ticker", "Ticker")}
-                <TableHead className="min-w-[50px]">Type</TableHead>
-                {renderSortHeader("shares", "Shares", "text-right")}
-                {renderSortHeader("price", "Price", "text-right")}
-                {renderSortHeader("gross", "Gross", "text-right")}
+                <TableHead className="min-w-[50px]">Side</TableHead>
+                <TableHead className="min-w-[120px]">Date</TableHead>
+                <TableHead className="min-w-[70px]">Broker</TableHead>
+                <TableHead className="min-w-[80px] text-right">Shares</TableHead>
+                <TableHead className="min-w-[80px] text-right">Price</TableHead>
+                <TableHead className="min-w-[90px] text-right">Amount</TableHead>
+                <TableHead className="min-w-[90px] text-right">P/L</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Array.from(groups.entries()).map(([groupKey, events]) => (
-                <Fragment key={groupKey}>
-                  {groupBy !== "none" && (
-                    <TableRow className="cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]" onClick={() => toggleGroup(groupKey)}>
-                      <TableCell colSpan={7} className="py-2">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          {collapsedGroups.has(groupKey) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-                          {groupKey} ({events.length})
+              {stockGroups.map((group) => (
+                <Fragment key={group.key}>
+                  <TableRow className="cursor-pointer bg-white/[0.03] hover:bg-white/[0.05]" onClick={() => toggleGroup(group.key)}>
+                    <TableCell colSpan={7} className="py-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {collapsedGroups.has(group.key) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                          <span className="text-sm font-semibold">{group.ticker}</span>
+                          {group.companyName.trim().toUpperCase() !== group.ticker.trim().toUpperCase() ? (
+                            <span className="text-xs text-muted-foreground">{group.companyName}</span>
+                          ) : null}
+                          <span className="text-xs text-muted-foreground">· {group.brokerLabel}</span>
+                          <span className="text-xs text-muted-foreground">· {group.cycles.length} round trip{group.cycles.length === 1 ? "" : "s"}</span>
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {!collapsedGroups.has(groupKey) && events.map((event) => (
-                    <TableRow key={event.id}>
-                      <TableCell><span className="text-xs">{formatLongDateTime(event.timestamp)}</span></TableCell>
-                      <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
-                      <TableCell>
-                        <span className="font-medium text-xs">{event.ticker}</span>
-                        {shouldShowCompanyName(event) ? (
-                          <span className="ml-1 text-[0.6rem] text-muted-foreground">{event.companyName}</span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        <span className={`text-xs font-medium ${event.type === "buy" ? "text-emerald-400" : "text-red-400"}`}>{event.type === "buy" ? "Buy" : "Sell"}</span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(event.shares)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(event.price, event.nativeCurrency)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-xs font-medium">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
-                    </TableRow>
-                  ))}
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">Stock P/L </span>
+                          {renderPlCell(group.netPlGbp)}
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  {!collapsedGroups.has(group.key) && group.cycles.flatMap((cycle) => {
+                    const rows = []
+                    if (cycle.buy) {
+                      rows.push(
+                        <TableRow key={`${cycle.id}:buy`} className="bg-white/[0.01]">
+                          <TableCell><span className="text-xs font-medium text-emerald-400">Buy</span></TableCell>
+                          <TableCell><span className="text-xs">{formatLongDateTime(cycle.buy.timestamp)}</span></TableCell>
+                          <TableCell><span className="text-xs text-muted-foreground">{cycle.brokerLabel}</span></TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(cycle.buy.shares)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(cycle.buy.price, cycle.buy.nativeCurrency)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatMoney(cycle.buy.grossAmountGbp, "GBP")}</TableCell>
+                          <TableCell />
+                        </TableRow>
+                      )
+                    }
+                    if (cycle.sell) {
+                      rows.push(
+                        <TableRow key={`${cycle.id}:sell`} className="border-b border-white/[0.06] bg-white/[0.01]">
+                          <TableCell><span className="text-xs font-medium text-red-400">Sell</span></TableCell>
+                          <TableCell><span className="text-xs">{formatLongDateTime(cycle.sell.timestamp)}</span></TableCell>
+                          <TableCell><span className="text-xs text-muted-foreground">{cycle.brokerLabel}</span></TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(cycle.sell.shares)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(cycle.sell.price, cycle.sell.nativeCurrency)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatMoney(cycle.sell.grossAmountGbp, "GBP")}</TableCell>
+                          <TableCell className="text-right">{renderPlCell(cycle.plGbp)}</TableCell>
+                        </TableRow>
+                      )
+                    }
+                    return rows
+                  })}
                 </Fragment>
               ))}
             </TableBody>
@@ -530,6 +509,7 @@ export default function DashboardHistoryPage() {
       .reduce((sum, s) => sum + s.netPLGbp, 0)
   })()
 
+  const displayPortfolioValueGbp = livePortfolioStats.totalPortfolioValueGbp
   const displayTotalInvestedGbp = livePortfolioStats.totalInvestedGbp
   const displayTotalReturnGbp = livePortfolioStats.unrealisedReturnGbp + realisedPL
   const returnOnInvestedPercent = displayTotalInvestedGbp > 0
@@ -561,31 +541,31 @@ export default function DashboardHistoryPage() {
       {/* KPI Strip */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Portfolio value</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(displayPortfolioValueGbp, "GBP")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Current value of open holdings (broker API)</p>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total invested</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(displayTotalInvestedGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Cost basis of open holdings from broker API</p>
+          <p className="mt-1 text-xs text-muted-foreground">What you paid for open holdings (shares × avg price)</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total return</p>
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${displayTotalReturnGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatSignedMoney(displayTotalReturnGbp)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Unrealised on open holdings + realised from history</p>
+          <p className="mt-1 text-xs text-muted-foreground">Unrealised on open + realised from history</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Return %</p>
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${returnOnInvestedPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {returnOnInvestedPercent >= 0 ? "+" : ""}{returnOnInvestedPercent.toFixed(1)}%
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">On open holdings cost basis</p>
-        </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Completed trades</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{tradeStats.completedTradeCount}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{tradeStats.orderLegCount} buy/sell legs in total</p>
+          <p className="mt-1 text-xs text-muted-foreground">On invested cost basis</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Win rate</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{winRate.toFixed(1)}%</p>
-          <p className="mt-1 text-xs text-muted-foreground">of tickers with sells</p>
+          <p className="mt-1 text-xs text-muted-foreground">{tradeStats.completedTradeCount} completed round trips</p>
         </div>
       </section>
 
@@ -925,7 +905,7 @@ export default function DashboardHistoryPage() {
 
           {/* Trade table or By-ticker summary */}
           {viewMode === "trades" ? (
-            <HistoryTransactionsTable activity={displayActivity} />
+            <HistoryTradeCyclesTable activity={displayActivity} />
           ) : (
             <Card className="border-white/10">
               <CardHeader className="pb-3">
