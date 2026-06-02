@@ -1,6 +1,6 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importEtoroPortfolioFromCsv } from "@/lib/integrations/etoro-csv"
-import { fetchEtoroActivityFromApi, fetchEtoroInstrumentQuoteFromApi, fetchEtoroPortfolioFromApi, searchEtoroInstrumentsFromApi } from "@/lib/integrations/etoro-live"
+import { fetchEtoroInstrumentQuoteFromApi, fetchEtoroPortfolioFromApi, fetchEtoroSyncDataFromApi, searchEtoroInstrumentsFromApi } from "@/lib/integrations/etoro-live"
 import { getEtoroSamplePortfolio } from "@/lib/portfolio/sample-portfolio"
 
 export const etoroProvider: BrokerProvider = {
@@ -16,19 +16,15 @@ export const etoroProvider: BrokerProvider = {
     return getEtoroSamplePortfolio()
   },
   async getSyncData(credentials) {
-    const positions = await this.getPositions(credentials)
-
     if (!(typeof credentials === "string" ? credentials.trim() : credentials?.apiKey?.trim())) {
+      const positions = await this.getPositions(credentials)
       return { positions, activity: [] }
     }
 
     try {
-      // Small delay to avoid rate limiting after positions fetch
+      // Small delay to avoid rate limiting after nearby broker calls.
       await new Promise((resolve) => setTimeout(resolve, 1000))
-      return {
-        positions,
-        activity: await fetchEtoroActivityFromApi(credentials),
-      }
+      return fetchEtoroSyncDataFromApi(credentials)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests")

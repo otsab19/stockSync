@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { fetchEtoroActivityFromApi, mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
+import { fetchEtoroActivityFromApi, fetchEtoroSyncDataFromApi, mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -139,6 +139,87 @@ describe("eToro live mapper", () => {
     }
 
     expect(mapEtoroPortfolioResponse(payload)).toEqual([])
+  })
+
+  it("adds open eToro portfolio positions to sync activity when they have an open timestamp", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+
+      if (requestUrl.includes("/trading/info/portfolio")) {
+        return Response.json({
+          clientPortfolio: {
+            positions: [
+              {
+                positionId: 9001,
+                instrumentID: 2072,
+                symbolFull: "RR.L",
+                instrumentDisplayName: "Rolls-Royce Holdings",
+                IsBuy: true,
+                units: 10,
+                Amount: 1500,
+                averageOpen: 1500,
+                currentRate: 1520,
+                currency: "GBp",
+                openTimestamp: "2026-06-02T16:30:00Z",
+              },
+            ],
+          },
+        })
+      }
+
+      if (requestUrl.includes("/trading/info/real/pnl")) {
+        return new Response("unused", { status: 404 })
+      }
+
+      if (requestUrl.includes("/trading/info/real/history") || requestUrl.includes("/trading/info/trade/history")) {
+        return Response.json([
+          {
+            instrumentID: 137,
+            symbolFull: "NVDA",
+            instrumentDisplayName: "NVIDIA Corporation",
+            isBuy: true,
+            openTimestamp: "2026-06-01T09:00:00Z",
+            closeTimestamp: "2026-06-01T15:00:00Z",
+            openRate: 100,
+            closeRate: 110,
+            investment: 1000,
+            units: 10,
+          },
+        ])
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return Response.json({
+          instrumentDisplayDatas: [
+            { instrumentID: 2072, instrumentDisplayName: "Rolls-Royce Holdings", symbolFull: "RR.L", priceSource: "LSE" },
+            { instrumentID: 137, instrumentDisplayName: "NVIDIA Corporation", symbolFull: "NVDA", priceSource: "NASDAQ" },
+          ],
+        })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const syncData = await fetchEtoroSyncDataFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+    const rollsRoyceBuy = syncData.activity.find((event) => event.ticker === "RR" && event.orderType === "Open")
+
+    expect(syncData.positions.map((position) => position.ticker)).toEqual(["RR"])
+    expect(rollsRoyceBuy).toMatchObject({
+      broker: "etoro",
+      ticker: "RR",
+      type: "buy",
+      timestamp: "2026-06-02T16:30:00Z",
+      shares: 10,
+      price: 15,
+      nativeCurrency: "GBP",
+      grossAmountGbp: 150,
+    })
   })
 
   it("uses eToro history symbol fields when metadata enrichment is unavailable", async () => {
