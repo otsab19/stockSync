@@ -172,7 +172,12 @@ export default function DashboardActivityPage() {
   }, [])
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => { void fetchPortfolio() }, 0)
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        await fetchPortfolio()
+        await fetchPortfolio({ refresh: true })
+      })()
+    }, 0)
     return () => { window.clearTimeout(timeoutId) }
   }, [fetchPortfolio])
 
