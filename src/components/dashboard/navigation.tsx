@@ -3,11 +3,12 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useSearchParams } from "next/navigation"
-import { ChartCandlestick, LayoutDashboard, Landmark, Settings } from "lucide-react"
+import { ArrowLeftRight, ChartCandlestick, LayoutDashboard, Landmark, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navigationItems = [
 	{ href: "/dashboard", label: "Dashboard", shortLabel: "Home", icon: LayoutDashboard },
+	{ href: "/dashboard/activity", label: "Activity", shortLabel: "Activity", icon: ArrowLeftRight },
 	{ href: "/dashboard/history", label: "History", shortLabel: "History", icon: ChartCandlestick },
 	{ href: "/integrations", label: "Connections", shortLabel: "Brokers", icon: Landmark },
 	{ href: "/settings", label: "Settings", shortLabel: "Settings", icon: Settings },
@@ -85,7 +86,7 @@ export function MobileBottomNav() {
 
 	return (
 		<nav className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 md:hidden">
-			<div className="mx-auto grid max-w-lg grid-cols-4 gap-2 rounded-[1.75rem] border border-white/10 bg-background/88 p-2 shadow-[0_16px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+			<div className="mx-auto grid max-w-lg grid-cols-5 gap-1 rounded-[1.75rem] border border-white/10 bg-background/88 p-2 shadow-[0_16px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl">
 				{navigationItems.map((item) => {
 					const Icon = item.icon
 					const isActive = isNavigationItemActive(pathname, view, item.href)
