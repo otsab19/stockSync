@@ -7,7 +7,8 @@ import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/typ
 const DEFAULT_TRADING212_API_BASE_URL = "https://live.trading212.com/api/v0"
 const DEFAULT_TRADING212_HISTORY_PATH = "/equity/history/orders?limit=50"
 const USD_TO_GBP_FALLBACK_RATE = 0.79
-const TRADING212_HISTORY_PAGE_DELAY_MS = 6_000 // 6 req/min limit — wait 6s between pages
+const TRADING212_HISTORY_PAGE_DELAY_MS = 11_000 // 6 req/min limit — keep safely below one request every 10s
+const DEFAULT_TRADING212_HISTORY_MAX_PAGES = 2
 
 type Trading212ApiRow = Record<string, unknown>
 
@@ -493,27 +494,39 @@ export async function fetchTrading212ActivityFromApi(credentials?: string | Brok
 
   const items: Trading212ApiRow[] = []
   let nextPath: string | null = DEFAULT_TRADING212_HISTORY_PATH
+  const maxPages = Number(process.env.TRADING212_HISTORY_MAX_PAGES ?? DEFAULT_TRADING212_HISTORY_MAX_PAGES)
+  const pageLimit = Number.isFinite(maxPages) && maxPages > 0 ? Math.floor(maxPages) : DEFAULT_TRADING212_HISTORY_MAX_PAGES
+  let pagesLoaded = 0
 
   logger.info({ broker: "t212", path: DEFAULT_TRADING212_HISTORY_PATH }, "Starting Trading 212 history sync")
 
   try {
-    while (nextPath) {
+    while (nextPath && pagesLoaded < pageLimit) {
       const historyPayload: Trading212HistoryResponse = await fetchTrading212Json(nextPath, apiKey, apiSecret)
+      pagesLoaded += 1
       const pageItems = (historyPayload.items ?? []).filter(isRecord)
       items.push(...pageItems)
       nextPath = typeof historyPayload.nextPagePath === "string" && historyPayload.nextPagePath.trim()
         ? historyPayload.nextPagePath
         : null
-      logger.debug({ broker: "t212", pageItems: pageItems.length, nextPath, totalItems: items.length }, "Loaded Trading 212 history page")
+      logger.debug({ broker: "t212", pageItems: pageItems.length, nextPath, totalItems: items.length, pagesLoaded, pageLimit }, "Loaded Trading 212 history page")
 
       // Rate limit: 6 req / 1 min — wait between pages to avoid 429
-      if (nextPath) {
+      if (nextPath && pagesLoaded < pageLimit) {
         await new Promise((resolve) => setTimeout(resolve, TRADING212_HISTORY_PAGE_DELAY_MS))
       }
     }
+
+    if (nextPath) {
+      logger.info({ broker: "t212", pagesLoaded, pageLimit, totalItems: items.length }, "Stopped Trading 212 history pagination at configured page limit")
+    }
   } catch (error) {
-    logger.error({ broker: "t212", error: getErrorLogDetails(error) }, "Trading 212 history sync failed")
-    throw error
+    if (items.length > 0) {
+      logger.warn({ broker: "t212", error: getErrorLogDetails(error), pagesLoaded, totalItems: items.length }, "Trading 212 history pagination stopped after partial results")
+    } else {
+      logger.error({ broker: "t212", error: getErrorLogDetails(error) }, "Trading 212 history sync failed")
+      throw error
+    }
   }
 
   const activity = items

@@ -83,11 +83,9 @@ async function recordBrokerSync(
   }
 
   if (activity) {
-    await writer.from("activity_events").delete().eq("user_id", userId).eq("broker", broker)
-
     if (activity.length > 0) {
       for (let index = 0; index < activity.length; index += 100) {
-        await writer.from("activity_events").insert(
+        await writer.from("activity_events").upsert(
           activity.slice(index, index + 100).map((event) => ({
             user_id: userId,
             broker: event.broker,
@@ -101,7 +99,8 @@ async function recordBrokerSync(
             realised_profit_gbp: event.realisedProfitGbp ?? null,
             order_type: event.orderType ?? null,
             timestamp: event.timestamp,
-          }))
+          })),
+          { onConflict: "user_id,broker,ticker,timestamp,event_type" }
         )
       }
     }

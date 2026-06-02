@@ -99,10 +99,8 @@ export async function POST(request: Request) {
     await writer.from("positions").insert(positionRows)
   }
 
-  // 4. Replace activity events for this broker when a fresh payload was provided
+  // 4. Upsert activity events for this broker when a fresh payload was provided
   if (activity) {
-    await writer.from("activity_events").delete().eq("user_id", user.id).eq("broker", broker)
-
     if (activity.length > 0) {
       const activityRows = activity.map((a) => ({
         user_id: user.id,
@@ -121,7 +119,10 @@ export async function POST(request: Request) {
 
       // Insert in batches of 100
       for (let i = 0; i < activityRows.length; i += 100) {
-        await writer.from("activity_events").insert(activityRows.slice(i, i + 100))
+        await writer.from("activity_events").upsert(
+          activityRows.slice(i, i + 100),
+          { onConflict: "user_id,broker,ticker,timestamp,event_type" }
+        )
       }
     }
   }

@@ -179,11 +179,9 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
 
   // Replace activity when a fresh activity payload was requested, even if it is empty.
   if (activity) {
-    await writer.from("activity_events").delete().eq("user_id", user.id).eq("broker", broker)
-
     if (activity.length > 0) {
       for (let i = 0; i < activity.length; i += 100) {
-        await writer.from("activity_events").insert(
+        await writer.from("activity_events").upsert(
           activity.slice(i, i + 100).map((a) => ({
             user_id: user.id,
             broker: a.broker,
@@ -197,7 +195,8 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
             realised_profit_gbp: a.realisedProfitGbp ?? null,
             order_type: a.orderType ?? null,
             timestamp: a.timestamp,
-          }))
+          })),
+          { onConflict: "user_id,broker,ticker,timestamp,event_type" }
         )
       }
     }
