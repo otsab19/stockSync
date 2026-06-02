@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
+  buildSellPlLookup,
   dedupeActivityEvents,
   endOfDay,
   filterActivityByDateRange,
   formatDateInputValue,
   formatDateRangeLabel,
   getDateRangeForPreset,
+  getSellPlGbp,
   parseDateInputValue,
   splitActivityBySide,
   startOfDay,
@@ -70,9 +72,11 @@ function shouldShowCompanyName(event: PortfolioActivityEvent) {
 function ActivityTable({
   events,
   side,
+  sellPlLookup,
 }: {
   events: PortfolioActivityEvent[]
   side: "buy" | "sell"
+  sellPlLookup: Map<string, number | null>
 }) {
   if (events.length === 0) {
     return (
@@ -101,10 +105,12 @@ function ActivityTable({
             <TableRow key={event.id} className="bg-white/[0.01]">
               <TableCell><span className="text-xs">{formatLongDateTime(event.timestamp)}</span></TableCell>
               <TableCell>
-                <span className="text-xs font-medium">{event.ticker}</span>
-                {shouldShowCompanyName(event) ? (
-                  <span className="ml-1 text-[0.6rem] text-muted-foreground">{event.companyName}</span>
-                ) : null}
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium">{event.ticker}</span>
+                  {shouldShowCompanyName(event) ? (
+                    <span className="text-[0.6rem] text-muted-foreground">{event.companyName}</span>
+                  ) : null}
+                </div>
               </TableCell>
               <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
               <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(event.shares)}</TableCell>
@@ -112,13 +118,17 @@ function ActivityTable({
               <TableCell className="text-right tabular-nums text-xs">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
               {side === "sell" ? (
                 <TableCell className="text-right">
-                  {event.realisedProfitGbp === undefined ? (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  ) : (
-                    <span className={`text-xs font-semibold tabular-nums ${event.realisedProfitGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {formatSignedMoney(event.realisedProfitGbp)}
-                    </span>
-                  )}
+                  {(() => {
+                    const plGbp = getSellPlGbp(event, sellPlLookup)
+                    if (plGbp === null) {
+                      return <span className="text-xs text-muted-foreground">—</span>
+                    }
+                    return (
+                      <span className={`text-xs font-semibold tabular-nums ${plGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {formatSignedMoney(plGbp)}
+                      </span>
+                    )
+                  })()}
                 </TableCell>
               ) : null}
             </TableRow>
@@ -173,6 +183,8 @@ export default function DashboardActivityPage() {
     return dedupeActivityEvents(activity)
   }, [portfolioResponse])
 
+  const todayKey = formatDateInputValue(new Date())
+
   const dateRange = useMemo(() => {
     if (preset === "custom") {
       const start = startOfDay(parseDateInputValue(customStart))
@@ -180,13 +192,18 @@ export default function DashboardActivityPage() {
       return start.getTime() <= end.getTime() ? { start, end } : { start: end, end: start }
     }
     return getDateRangeForPreset(preset)
-  }, [customEnd, customStart, preset])
+  }, [customEnd, customStart, preset, todayKey])
+
+  const sellPlLookup = useMemo(() => buildSellPlLookup(rawActivity), [rawActivity])
 
   const periodActivity = useMemo(
     () => filterActivityByDateRange(rawActivity, dateRange.start, dateRange.end),
     [dateRange.end, dateRange.start, rawActivity]
   )
-  const summary = useMemo(() => summarizeActivityPeriod(periodActivity), [periodActivity])
+  const summary = useMemo(
+    () => summarizeActivityPeriod(periodActivity, sellPlLookup),
+    [periodActivity, sellPlLookup]
+  )
   const { buys, sells } = useMemo(() => splitActivityBySide(periodActivity), [periodActivity])
   const rangeLabel = useMemo(() => formatDateRangeLabel(dateRange.start, dateRange.end), [dateRange.end, dateRange.start])
 
@@ -272,11 +289,11 @@ export default function DashboardActivityPage() {
           <p className="mt-1 text-xs text-muted-foreground">{summary.sellCount} sell leg{summary.sellCount === 1 ? "" : "s"}</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Net cash flow</p>
-          <p className={`mt-2 text-2xl font-semibold tracking-tight ${summary.netCashFlowGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-            {formatSignedMoney(summary.netCashFlowGbp)}
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Realised P/L</p>
+          <p className={`mt-2 text-2xl font-semibold tracking-tight ${summary.totalRealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {formatSignedMoney(summary.totalRealisedPlGbp)}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Sold minus bought in this period</p>
+          <p className="mt-1 text-xs text-muted-foreground">Profit/loss on sells closed in this period</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Activity</p>
@@ -317,7 +334,7 @@ export default function DashboardActivityPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <ActivityTable events={buys} side="buy" />
+              <ActivityTable events={buys} side="buy" sellPlLookup={sellPlLookup} />
             </CardContent>
           </Card>
 
@@ -337,7 +354,7 @@ export default function DashboardActivityPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <ActivityTable events={sells} side="sell" />
+              <ActivityTable events={sells} side="sell" sellPlLookup={sellPlLookup} />
             </CardContent>
           </Card>
         </div>

@@ -1,3 +1,4 @@
+import { buildTradeCycles } from "@/lib/dashboard/trade-cycles"
 import type { PortfolioActivityEvent } from "@/types/portfolio"
 
 export type ActivityDatePreset = "today" | "yesterday" | "last-7d" | "last-30d" | "custom"
@@ -7,7 +8,7 @@ export type ActivityPeriodSummary = {
   sellCount: number
   totalBoughtGbp: number
   totalSoldGbp: number
-  netCashFlowGbp: number
+  totalRealisedPlGbp: number
 }
 
 export function startOfDay(date: Date) {
@@ -95,25 +96,51 @@ export function getActivitySide(event: PortfolioActivityEvent): "buy" | "sell" {
   return event.type
 }
 
+function toLocalDateKey(value: string | Date) {
+  return formatDateInputValue(value instanceof Date ? value : new Date(value))
+}
+
 export function filterActivityByDateRange(
   activity: PortfolioActivityEvent[],
   start: Date,
   end: Date
 ) {
-  const startMs = start.getTime()
-  const endMs = end.getTime()
+  const startKey = toLocalDateKey(start)
+  const endKey = toLocalDateKey(end)
 
   return activity.filter((event) => {
-    const timestamp = new Date(event.timestamp).getTime()
-    return timestamp >= startMs && timestamp <= endMs
+    const eventKey = toLocalDateKey(event.timestamp)
+    return eventKey >= startKey && eventKey <= endKey
   })
 }
 
-export function summarizeActivityPeriod(activity: PortfolioActivityEvent[]): ActivityPeriodSummary {
+export function buildSellPlLookup(activity: PortfolioActivityEvent[]) {
+  const lookup = new Map<string, number | null>()
+
+  buildTradeCycles(activity).forEach((cycle) => {
+    if (cycle.sell) lookup.set(cycle.sell.id, cycle.plGbp)
+  })
+
+  return lookup
+}
+
+export function getSellPlGbp(
+  sell: PortfolioActivityEvent,
+  plLookup: Map<string, number | null>
+) {
+  if (sell.realisedProfitGbp !== undefined) return sell.realisedProfitGbp
+  return plLookup.get(sell.id) ?? null
+}
+
+export function summarizeActivityPeriod(
+  activity: PortfolioActivityEvent[],
+  sellPlLookup: Map<string, number | null> = new Map()
+): ActivityPeriodSummary {
   let buyCount = 0
   let sellCount = 0
   let totalBoughtGbp = 0
   let totalSoldGbp = 0
+  let totalRealisedPlGbp = 0
 
   activity.forEach((event) => {
     if (getActivitySide(event) === "buy") {
@@ -124,6 +151,9 @@ export function summarizeActivityPeriod(activity: PortfolioActivityEvent[]): Act
 
     sellCount += 1
     totalSoldGbp += event.grossAmountGbp
+
+    const plGbp = getSellPlGbp(event, sellPlLookup)
+    if (plGbp !== null) totalRealisedPlGbp += plGbp
   })
 
   return {
@@ -131,7 +161,7 @@ export function summarizeActivityPeriod(activity: PortfolioActivityEvent[]): Act
     sellCount,
     totalBoughtGbp,
     totalSoldGbp,
-    netCashFlowGbp: totalSoldGbp - totalBoughtGbp,
+    totalRealisedPlGbp,
   }
 }
 

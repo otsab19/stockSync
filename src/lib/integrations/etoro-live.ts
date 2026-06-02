@@ -704,6 +704,14 @@ function createEtoroActivityEvent(
   // when compared to derived close amounts.
   const nativeGrossAmount = (Math.abs(shares) * price) / Math.max(leverage, 1)
   const grossAmountGbp = convertNativeToGbp(nativeGrossAmount, nativeCurrency)
+  const closeNetProfit = phase === "close"
+    ? getNumberValue(normalizedRow, ["netProfit", "NetProfit", "profit", "Profit", "pnl", "Pnl", "PnL"])
+    : null
+  const accountCurrency: PortfolioPosition["nativeCurrency"] =
+    rowCurrencyInfo.currency === "GBP" ? "GBP" : "USD"
+  const realisedProfitGbp = closeNetProfit !== null
+    ? convertNativeToGbp(closeNetProfit, accountCurrency)
+    : undefined
 
   return {
     id: `etoro:${positionId}:${phase}:${timestamp}:${price}`,
@@ -718,6 +726,7 @@ function createEtoroActivityEvent(
     nativeCurrency,
     grossAmount: nativeGrossAmount,
     grossAmountGbp,
+    realisedProfitGbp,
     orderType: phase === "open" ? "Open" : "Close",
   }
 }

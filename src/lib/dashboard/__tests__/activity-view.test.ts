@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  buildSellPlLookup,
   filterActivityByDateRange,
   formatDateRangeLabel,
   getActivitySide,
   getDateRangeForPreset,
+  getSellPlGbp,
   splitActivityBySide,
   summarizeActivityPeriod,
 } from "@/lib/dashboard/activity-view"
@@ -57,7 +59,7 @@ describe("activity view", () => {
   it("summarises buys and sells for the selected period", () => {
     const activity = [
       makeEvent({ id: "a", type: "buy", grossAmountGbp: 100 }),
-      makeEvent({ id: "b", type: "sell", grossAmountGbp: 150 }),
+      makeEvent({ id: "b", type: "sell", grossAmountGbp: 150, realisedProfitGbp: 50 }),
     ]
 
     expect(summarizeActivityPeriod(activity)).toEqual({
@@ -65,8 +67,35 @@ describe("activity view", () => {
       sellCount: 1,
       totalBoughtGbp: 100,
       totalSoldGbp: 150,
-      netCashFlowGbp: 50,
+      totalRealisedPlGbp: 50,
     })
+  })
+
+  it("derives sell p/l from trade cycles when broker profit is missing", () => {
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", timestamp: "2026-06-01T09:00:00Z", grossAmountGbp: 100 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", timestamp: "2026-06-01T12:00:00Z", grossAmountGbp: 130 }),
+    ]
+    const lookup = buildSellPlLookup(activity)
+
+    expect(getSellPlGbp(activity[1]!, lookup)).toBe(30)
+    expect(summarizeActivityPeriod(activity, lookup).totalRealisedPlGbp).toBe(30)
+  })
+
+  it("filters by local calendar date rather than raw timestamp bounds", () => {
+    const activity = [
+      makeEvent({ id: "a", type: "buy", timestamp: "2026-06-01T17:15:00" }),
+      makeEvent({ id: "b", type: "sell", timestamp: "2026-05-30T09:00:00" }),
+    ]
+
+    const filtered = filterActivityByDateRange(
+      activity,
+      new Date(2026, 5, 1, 0, 0, 0, 0),
+      new Date(2026, 5, 1, 23, 59, 59, 999)
+    )
+
+    expect(filtered.map((event) => event.id)).toContain("a")
+    expect(filtered.map((event) => event.id)).not.toContain("b")
   })
 
   it("splits activity into buy and sell lists", () => {
