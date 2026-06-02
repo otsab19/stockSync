@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { buildLivePortfolioStats, formatMoney } from "@/lib/dashboard/filter-engine"
-import { buildTradeCycles, groupTradeCyclesByStock } from "@/lib/dashboard/trade-cycles"
+import { buildTradeCycles, groupTradeCycles, type TradeCycleGroupBy } from "@/lib/dashboard/trade-cycles"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
 import type { BrokerId, PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portfolio"
 
@@ -290,11 +290,13 @@ function shouldShowCompanyName(event: PortfolioActivityEvent) {
 }
 
 function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEvent[] }) {
+  const [groupBy, setGroupBy] = useState<TradeCycleGroupBy>("ticker")
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
-  const stockGroups = useMemo(
-    () => groupTradeCyclesByStock(buildTradeCycles(activity)),
-    [activity]
+  const tradeCycles = useMemo(() => buildTradeCycles(activity), [activity])
+  const tableGroups = useMemo(
+    () => groupTradeCycles(tradeCycles, groupBy),
+    [groupBy, tradeCycles]
   )
 
   function toggleGroup(key: string) {
@@ -315,11 +317,49 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
     )
   }
 
+  function renderGroupHeader(group: ReturnType<typeof groupTradeCycles>[number]) {
+    const showPl = group.key === "sells" || groupBy === "ticker" || groupBy === "broker"
+    return (
+      <TableRow className="cursor-pointer bg-white/[0.03] hover:bg-white/[0.05]" onClick={() => toggleGroup(group.key)}>
+        <TableCell colSpan={8} className="py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {collapsedGroups.has(group.key) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+              <span className="text-sm font-semibold">{group.label}</span>
+              {group.detail ? <span className="text-xs text-muted-foreground">· {group.detail}</span> : null}
+            </div>
+            {showPl ? (
+              <div className="text-xs">
+                <span className="text-muted-foreground">{groupBy === "ticker" ? "Stock P/L " : "Group P/L "}</span>
+                {renderPlCell(group.netPlGbp)}
+              </div>
+            ) : null}
+          </div>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
   return (
     <Card className="border-white/10">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Transactions ({activity.length} legs · {stockGroups.reduce((sum, group) => sum + group.cycles.length, 0)} round trips)</CardTitle>
-        <CardDescription>Grouped by stock with buy/sell pairs and P/L per round trip.</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+        <div>
+          <CardTitle className="text-base">Transactions ({activity.length} legs · {tradeCycles.length} round trips)</CardTitle>
+          <CardDescription>Buy/sell pairs with P/L per round trip.</CardDescription>
+        </div>
+        <select
+          value={groupBy}
+          onChange={(event) => {
+            setGroupBy(event.target.value as TradeCycleGroupBy)
+            setCollapsedGroups(new Set())
+          }}
+          className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
+        >
+          <option value="ticker">Group by stock</option>
+          <option value="broker">Group by broker</option>
+          <option value="type">Group by buy/sell</option>
+          <option value="none">No grouping</option>
+        </select>
       </CardHeader>
       <CardContent className="p-0">
         <div className="max-h-[65vh] overflow-auto">
@@ -329,6 +369,7 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
                 <TableHead className="min-w-[50px]">Side</TableHead>
                 <TableHead className="min-w-[120px]">Date</TableHead>
                 <TableHead className="min-w-[70px]">Broker</TableHead>
+                <TableHead className="min-w-[80px]">Ticker</TableHead>
                 <TableHead className="min-w-[80px] text-right">Shares</TableHead>
                 <TableHead className="min-w-[80px] text-right">Price</TableHead>
                 <TableHead className="min-w-[90px] text-right">Amount</TableHead>
@@ -336,28 +377,10 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stockGroups.map((group) => (
+              {tableGroups.map((group) => (
                 <Fragment key={group.key}>
-                  <TableRow className="cursor-pointer bg-white/[0.03] hover:bg-white/[0.05]" onClick={() => toggleGroup(group.key)}>
-                    <TableCell colSpan={7} className="py-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          {collapsedGroups.has(group.key) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-                          <span className="text-sm font-semibold">{group.ticker}</span>
-                          {group.companyName.trim().toUpperCase() !== group.ticker.trim().toUpperCase() ? (
-                            <span className="text-xs text-muted-foreground">{group.companyName}</span>
-                          ) : null}
-                          <span className="text-xs text-muted-foreground">· {group.brokerLabel}</span>
-                          <span className="text-xs text-muted-foreground">· {group.cycles.length} round trip{group.cycles.length === 1 ? "" : "s"}</span>
-                        </div>
-                        <div className="text-xs">
-                          <span className="text-muted-foreground">Stock P/L </span>
-                          {renderPlCell(group.netPlGbp)}
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                  {!collapsedGroups.has(group.key) && group.cycles.flatMap((cycle) => {
+                  {groupBy !== "none" ? renderGroupHeader(group) : null}
+                  {(groupBy === "none" || !collapsedGroups.has(group.key)) && group.cycles.flatMap((cycle) => {
                     const rows = []
                     cycle.buys.forEach((buy, buyIndex) => {
                       rows.push(
@@ -365,6 +388,12 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
                           <TableCell><span className="text-xs font-medium text-emerald-400">Buy</span></TableCell>
                           <TableCell><span className="text-xs">{formatLongDateTime(buy.timestamp)}</span></TableCell>
                           <TableCell><span className="text-xs text-muted-foreground">{cycle.brokerLabel}</span></TableCell>
+                          <TableCell>
+                            <span className="font-medium text-xs">{cycle.ticker}</span>
+                            {shouldShowCompanyName(buy) ? (
+                              <span className="ml-1 text-[0.6rem] text-muted-foreground">{buy.companyName}</span>
+                            ) : null}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(buy.shares)}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(buy.price, buy.nativeCurrency)}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatMoney(buy.grossAmountGbp, "GBP")}</TableCell>
@@ -378,6 +407,12 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
                           <TableCell><span className="text-xs font-medium text-red-400">Sell</span></TableCell>
                           <TableCell><span className="text-xs">{formatLongDateTime(cycle.sell.timestamp)}</span></TableCell>
                           <TableCell><span className="text-xs text-muted-foreground">{cycle.brokerLabel}</span></TableCell>
+                          <TableCell>
+                            <span className="font-medium text-xs">{cycle.ticker}</span>
+                            {shouldShowCompanyName(cycle.sell) ? (
+                              <span className="ml-1 text-[0.6rem] text-muted-foreground">{cycle.sell.companyName}</span>
+                            ) : null}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(cycle.sell.shares)}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(cycle.sell.price, cycle.sell.nativeCurrency)}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatMoney(cycle.sell.grossAmountGbp, "GBP")}</TableCell>

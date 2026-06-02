@@ -165,8 +165,18 @@ export function buildTradeCycles(activity: PortfolioActivityEvent[]): TradeCycle
   )
 }
 
-export function groupTradeCyclesByStock(cycles: TradeCycle[]) {
-  const groups = new Map<string, { key: string; ticker: string; companyName: string; broker: BrokerId; brokerLabel: string; cycles: TradeCycle[]; netPlGbp: number }>()
+export type TradeCycleGroup = {
+  key: string
+  label: string
+  detail?: string
+  cycles: TradeCycle[]
+  netPlGbp: number
+}
+
+export type TradeCycleGroupBy = "none" | "ticker" | "broker" | "type"
+
+export function groupTradeCyclesByStock(cycles: TradeCycle[]): TradeCycleGroup[] {
+  const groups = new Map<string, TradeCycleGroup & { ticker: string; companyName: string; broker: BrokerId; brokerLabel: string }>()
 
   cycles.forEach((cycle) => {
     const key = `${cycle.ticker}:${cycle.broker}`
@@ -176,6 +186,8 @@ export function groupTradeCyclesByStock(cycles: TradeCycle[]) {
       companyName: cycle.companyName,
       broker: cycle.broker,
       brokerLabel: cycle.brokerLabel,
+      label: cycle.ticker,
+      detail: cycle.brokerLabel,
       cycles: [],
       netPlGbp: 0,
     }
@@ -185,7 +197,98 @@ export function groupTradeCyclesByStock(cycles: TradeCycle[]) {
     groups.set(key, existing)
   })
 
-  return Array.from(groups.values()).sort(
-    (left, right) => new Date(right.cycles[0]?.latestTimestamp ?? 0).getTime() - new Date(left.cycles[0]?.latestTimestamp ?? 0).getTime()
-  )
+  return Array.from(groups.values())
+    .map(({ label, detail, cycles: groupedCycles, netPlGbp, key }) => ({
+      key,
+      label,
+      detail: `${detail} · ${groupedCycles.length} round trip${groupedCycles.length === 1 ? "" : "s"}`,
+      cycles: groupedCycles,
+      netPlGbp,
+    }))
+    .sort(
+      (left, right) => new Date(right.cycles[0]?.latestTimestamp ?? 0).getTime() - new Date(left.cycles[0]?.latestTimestamp ?? 0).getTime()
+    )
+}
+
+export function groupTradeCyclesByBroker(cycles: TradeCycle[]): TradeCycleGroup[] {
+  const groups = new Map<string, TradeCycleGroup>()
+
+  cycles.forEach((cycle) => {
+    const existing = groups.get(cycle.broker) ?? {
+      key: cycle.broker,
+      label: cycle.brokerLabel,
+      cycles: [],
+      netPlGbp: 0,
+    }
+
+    existing.cycles.push(cycle)
+    if (cycle.plGbp !== null) existing.netPlGbp += cycle.plGbp
+    groups.set(cycle.broker, existing)
+  })
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      detail: `${group.cycles.length} round trip${group.cycles.length === 1 ? "" : "s"}`,
+    }))
+    .sort(
+      (left, right) => new Date(right.cycles[0]?.latestTimestamp ?? 0).getTime() - new Date(left.cycles[0]?.latestTimestamp ?? 0).getTime()
+    )
+}
+
+export function groupTradeCyclesBySide(cycles: TradeCycle[]): TradeCycleGroup[] {
+  const buyCycles: TradeCycle[] = []
+  const sellCycles: TradeCycle[] = []
+
+  cycles.forEach((cycle) => {
+    cycle.buys.forEach((buy, index) => {
+      const buyOnlyCycle = createTradeCycle(`${cycle.id}:buy:${index}`, [buy], undefined, null)
+      if (buyOnlyCycle) buyCycles.push(buyOnlyCycle)
+    })
+
+    if (cycle.sell) {
+      const sellOnlyCycle = createTradeCycle(`${cycle.id}:sell`, [], cycle.sell, cycle.plGbp)
+      if (sellOnlyCycle) sellCycles.push(sellOnlyCycle)
+    }
+  })
+
+  const sortByLatest = (left: TradeCycle, right: TradeCycle) =>
+    new Date(right.latestTimestamp).getTime() - new Date(left.latestTimestamp).getTime()
+
+  return [
+    {
+      key: "buys",
+      label: "Buys",
+      detail: `${buyCycles.length} buy leg${buyCycles.length === 1 ? "" : "s"}`,
+      cycles: buyCycles.sort(sortByLatest),
+      netPlGbp: 0,
+    },
+    {
+      key: "sells",
+      label: "Sells",
+      detail: `${sellCycles.length} sell leg${sellCycles.length === 1 ? "" : "s"}`,
+      cycles: sellCycles.sort(sortByLatest),
+      netPlGbp: sellCycles.reduce((sum, cycle) => sum + (cycle.plGbp ?? 0), 0),
+    },
+  ]
+}
+
+export function groupTradeCycles(cycles: TradeCycle[], groupBy: TradeCycleGroupBy): TradeCycleGroup[] {
+  switch (groupBy) {
+    case "broker":
+      return groupTradeCyclesByBroker(cycles)
+    case "type":
+      return groupTradeCyclesBySide(cycles)
+    case "none":
+      return [{
+        key: "all",
+        label: "All trades",
+        detail: `${cycles.length} round trip${cycles.length === 1 ? "" : "s"}`,
+        cycles,
+        netPlGbp: cycles.reduce((sum, cycle) => sum + (cycle.plGbp ?? 0), 0),
+      }]
+    case "ticker":
+    default:
+      return groupTradeCyclesByStock(cycles)
+  }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildTradeCycles, groupTradeCyclesByStock } from "@/lib/dashboard/trade-cycles"
+import { buildTradeCycles, groupTradeCycles, groupTradeCyclesByBroker, groupTradeCyclesBySide, groupTradeCyclesByStock } from "@/lib/dashboard/trade-cycles"
 import type { PortfolioActivityEvent } from "@/types/portfolio"
 
 function makeEvent(overrides: Partial<PortfolioActivityEvent> & Pick<PortfolioActivityEvent, "id" | "type">): PortfolioActivityEvent {
@@ -103,7 +103,51 @@ describe("trade cycles", () => {
     const groups = groupTradeCyclesByStock(buildTradeCycles(activity))
 
     expect(groups).toHaveLength(1)
+    expect(groups[0].label).toBe("NVDA")
     expect(groups[0].cycles).toHaveLength(2)
     expect(groups[0].netPlGbp).toBe(5)
+  })
+
+  it("groups cycles by broker", () => {
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", broker: "t212", brokerLabel: "Trading 212", shares: 10, grossAmountGbp: 50 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", broker: "t212", brokerLabel: "Trading 212", shares: 10, grossAmountGbp: 60 }),
+      makeEvent({ id: "etoro:456:open:2026-06-01T09:00:00Z:100", type: "buy", broker: "etoro", brokerLabel: "eToro", orderType: "Open", grossAmountGbp: 100 }),
+      makeEvent({ id: "etoro:456:close:2026-06-01T15:00:00Z:110", type: "sell", broker: "etoro", brokerLabel: "eToro", orderType: "Close", grossAmountGbp: 110, realisedProfitGbp: 10 }),
+    ]
+
+    const groups = groupTradeCyclesByBroker(buildTradeCycles(activity))
+
+    expect(groups).toHaveLength(2)
+    expect(groups.find((group) => group.key === "t212")?.netPlGbp).toBe(10)
+    expect(groups.find((group) => group.key === "etoro")?.netPlGbp).toBe(10)
+  })
+
+  it("groups cycles by buy/sell side", () => {
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", shares: 10, grossAmountGbp: 50 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", shares: 10, grossAmountGbp: 60 }),
+    ]
+
+    const groups = groupTradeCyclesBySide(buildTradeCycles(activity))
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0].key).toBe("buys")
+    expect(groups[0].cycles).toHaveLength(1)
+    expect(groups[1].key).toBe("sells")
+    expect(groups[1].netPlGbp).toBe(10)
+  })
+
+  it("returns a flat group when grouping is disabled", () => {
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", shares: 10, grossAmountGbp: 50 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", shares: 10, grossAmountGbp: 60 }),
+    ]
+
+    const groups = groupTradeCycles(buildTradeCycles(activity), "none")
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].key).toBe("all")
+    expect(groups[0].cycles).toHaveLength(1)
   })
 })
