@@ -109,12 +109,23 @@ export function filterActivity(activity: PortfolioActivityEvent[], portfolio: Po
   return activity.filter((event) => visiblePositionKeys.has(`${event.broker}:${event.ticker}`))
 }
 
+export function buildLivePortfolioStats(portfolio: PortfolioPosition[]) {
+  const totalPortfolioValueGbp = portfolio.reduce((sum, position) => sum + position.normalizedTotalValueGbp, 0)
+  const unrealisedReturnGbp = portfolio.reduce((sum, position) => sum + position.totalPL, 0)
+  const totalInvestedGbp = totalPortfolioValueGbp - unrealisedReturnGbp
+
+  return {
+    totalInvestedGbp,
+    totalPortfolioValueGbp,
+    unrealisedReturnGbp,
+    returnPercent: totalInvestedGbp > 0 ? (unrealisedReturnGbp / totalInvestedGbp) * 100 : 0,
+  }
+}
+
 export function buildInsights(portfolio: PortfolioPosition[]): PortfolioInsights
 export function buildInsights(portfolio: PortfolioPosition[], activity: PortfolioActivityEvent[]): PortfolioInsights
 export function buildInsights(portfolio: PortfolioPosition[], activity: PortfolioActivityEvent[] = []): PortfolioInsights {
-  const totalPortfolioValueGbp = portfolio.reduce((sum, position) => sum + position.normalizedTotalValueGbp, 0)
-  const totalNetReturnGbp = portfolio.reduce((sum, position) => sum + position.totalPL, 0)
-  const totalCostBasis = totalPortfolioValueGbp - totalNetReturnGbp
+  const { totalInvestedGbp: totalCostBasis, totalPortfolioValueGbp, unrealisedReturnGbp: totalNetReturnGbp } = buildLivePortfolioStats(portfolio)
   const totalNetReturnPercent = totalCostBasis <= 0 ? 0 : (totalNetReturnGbp / totalCostBasis) * 100
   const activeAlertStates = portfolio.filter((position) => position.alertStatus === "near-alert").length
 

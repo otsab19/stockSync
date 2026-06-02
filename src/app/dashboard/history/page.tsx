@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { formatMoney } from "@/lib/dashboard/filter-engine"
+import { buildLivePortfolioStats, formatMoney } from "@/lib/dashboard/filter-engine"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
 import type { BrokerId, PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portfolio"
 
@@ -114,39 +114,22 @@ function dedupeActivityEvents(activity: PortfolioActivityEvent[]) {
   })
 }
 
-function buildHistoryInvestmentStats(activity: PortfolioActivityEvent[]) {
+function buildHistoryTradeStats(activity: PortfolioActivityEvent[]) {
   const events = dedupeActivityEvents(activity)
   const etoroPositionIds = new Set<string>()
-  let totalInvestedGbp = 0
-  let totalReturnedGbp = 0
   let nonEtoroTradeCount = 0
 
   events.forEach((event) => {
     if (event.broker === "etoro") {
       const positionId = event.id.split(":")[1]
       if (positionId) etoroPositionIds.add(positionId)
-
-      if (event.orderType === "Open") {
-        totalInvestedGbp += event.grossAmountGbp
-      } else if (event.orderType === "Close") {
-        totalReturnedGbp += event.grossAmountGbp
-      }
       return
     }
 
     nonEtoroTradeCount += 1
-
-    if (event.type === "buy") {
-      totalInvestedGbp += event.grossAmountGbp
-    } else {
-      totalReturnedGbp += event.grossAmountGbp
-    }
   })
 
   return {
-    totalInvestedGbp,
-    totalReturnedGbp,
-    netInvestedGbp: totalInvestedGbp - totalReturnedGbp,
     completedTradeCount: etoroPositionIds.size + nonEtoroTradeCount,
     orderLegCount: events.length,
   }
@@ -474,7 +457,14 @@ export default function DashboardHistoryPage() {
       : []
     return dedupeActivityEvents(activity)
   }, [portfolioResponse])
-  const volumeStats = useMemo(() => buildHistoryInvestmentStats(rawActivity), [rawActivity])
+  const tradeStats = useMemo(() => buildHistoryTradeStats(rawActivity), [rawActivity])
+  const filteredPortfolio = useMemo(
+    () => filters.brokers.length === 0
+      ? portfolio
+      : portfolio.filter((position) => filters.brokers.includes(position.broker)),
+    [filters.brokers, portfolio]
+  )
+  const livePortfolioStats = useMemo(() => buildLivePortfolioStats(filteredPortfolio), [filteredPortfolio])
   const availableBrokers = useMemo(
     () => Array.from(new Map<BrokerId, { broker: BrokerId; label: string }>([
       ...portfolio.map((p) => [p.broker, { broker: p.broker, label: p.brokerLabel }] as const),
@@ -527,10 +517,7 @@ export default function DashboardHistoryPage() {
   const bestTrade = displayActivity.length > 0 ? displayActivity.reduce((best, e) => e.grossAmountGbp > best.grossAmountGbp ? e : best) : null
   const worstTrade = displayActivity.length > 0 ? displayActivity.reduce((worst, e) => e.grossAmountGbp < worst.grossAmountGbp ? e : worst) : null
 
-  const investmentStats = useMemo(() => buildHistoryInvestmentStats(displayActivity), [displayActivity])
-
-  // Realized P&L: prefer explicit realisedProfitGbp from broker (T212 provides this on sells)
-  // Fall back to per-ticker net for tickers with both buys and sells
+  // Realized P&L from trade history (broker-reported where available)
   const realisedPL = (() => {
     const explicitPL = displayActivity
       .filter((e) => e.realisedProfitGbp !== undefined)
@@ -543,13 +530,11 @@ export default function DashboardHistoryPage() {
       .reduce((sum, s) => sum + s.netPLGbp, 0)
   })()
 
-  const displayTotalReturnGbp = realisedPL
-  const displayNetInvestedGbp = investmentStats.netInvestedGbp
-  const returnOnInvestedPercent = displayNetInvestedGbp > 0
-    ? (displayTotalReturnGbp / displayNetInvestedGbp) * 100
-    : investmentStats.totalInvestedGbp > 0
-      ? (displayTotalReturnGbp / investmentStats.totalInvestedGbp) * 100
-      : 0
+  const displayTotalInvestedGbp = livePortfolioStats.totalInvestedGbp
+  const displayTotalReturnGbp = livePortfolioStats.unrealisedReturnGbp + realisedPL
+  const returnOnInvestedPercent = displayTotalInvestedGbp > 0
+    ? (displayTotalReturnGbp / displayTotalInvestedGbp) * 100
+    : 0
 
   const avgTradeSizeGbp = displayActivity.length === 0 ? 0 : displayActivity.reduce((sum, e) => sum + e.grossAmountGbp, 0) / displayActivity.length
 
@@ -563,7 +548,7 @@ export default function DashboardHistoryPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Showing {displayActivity.length} of {volumeStats.completedTradeCount} completed trade{volumeStats.completedTradeCount === 1 ? "" : "s"} ({volumeStats.orderLegCount} order legs)
+            Showing {displayActivity.length} of {tradeStats.completedTradeCount} completed trade{tradeStats.completedTradeCount === 1 ? "" : "s"} ({tradeStats.orderLegCount} order legs)
           </p>
           {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers (T212 history may take ~30s due to rate limits)...</p>}
         </div>
@@ -577,25 +562,25 @@ export default function DashboardHistoryPage() {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total invested</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(displayNetInvestedGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Net capital in open trades</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(displayTotalInvestedGbp, "GBP")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Cost basis of open holdings from broker API</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total return</p>
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${displayTotalReturnGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatSignedMoney(displayTotalReturnGbp)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Realised profit or loss</p>
+          <p className="mt-1 text-xs text-muted-foreground">Unrealised on open holdings + realised from history</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Return %</p>
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${returnOnInvestedPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {returnOnInvestedPercent >= 0 ? "+" : ""}{returnOnInvestedPercent.toFixed(1)}%
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">On net invested capital</p>
+          <p className="mt-1 text-xs text-muted-foreground">On open holdings cost basis</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Completed trades</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{volumeStats.completedTradeCount}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{volumeStats.orderLegCount} buy/sell legs in total</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{tradeStats.completedTradeCount}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{tradeStats.orderLegCount} buy/sell legs in total</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Win rate</p>
