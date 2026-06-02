@@ -39,14 +39,11 @@ export const trading212Provider: BrokerProvider = {
         activity: await fetchTrading212ActivityFromApi(credentials),
       }
     } catch (error) {
-      if (!isTrading212RateLimitError(error)) {
-        throw error
+      if (isTrading212RateLimitError(error)) {
+        throw new Error("Trading 212 positions refreshed, but trade history hit the broker rate limit. Try refreshing activity again in a minute.")
       }
 
-      return {
-        positions,
-        message: "Trading 212 positions refreshed, but trade history hit the broker rate limit. Try refreshing history again in a minute.",
-      }
+      throw error
     }
   },
   async searchInstruments(query, credentials) {

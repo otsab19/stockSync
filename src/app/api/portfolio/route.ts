@@ -144,7 +144,19 @@ async function refreshSupabaseBrokerData(includeActivity: boolean) {
 export async function GET(request: Request) {
   const url = new URL(request.url)
   if (url.searchParams.get("refresh") === "true") {
-    await refreshSupabaseBrokerData(url.searchParams.get("includeActivity") === "true")
+    try {
+      await refreshSupabaseBrokerData(url.searchParams.get("includeActivity") === "true")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to refresh broker data."
+      return NextResponse.json<PortfolioApiResponse>({
+        status: "error",
+        backend: "supabase",
+        source: "server",
+        portfolio: [],
+        insights: null,
+        message,
+      }, { status: 500 })
+    }
   }
 
   const repository = createServerPortfolioRepository()

@@ -33,12 +33,9 @@ export const etoroProvider: BrokerProvider = {
       const message = error instanceof Error ? error.message : String(error)
       const isRateLimit = message.includes("429") || message.toLowerCase().includes("too many requests")
 
-      return {
-        positions,
-        message: isRateLimit
-          ? "eToro positions refreshed, but trade history hit the broker rate limit. Try refreshing history again in a minute."
-          : `eToro positions refreshed, but trade history failed: ${message.slice(0, 150)}`,
-      }
+      throw new Error(isRateLimit
+        ? "eToro positions refreshed, but trade history hit the broker rate limit. Try refreshing activity again in a minute."
+        : `eToro positions refreshed, but trade history failed: ${message.slice(0, 150)}`)
     }
   },
   async searchInstruments(query, credentials) {

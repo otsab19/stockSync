@@ -142,7 +142,7 @@ function ActivityTable({
 export default function DashboardActivityPage() {
   const [portfolioResponse, setPortfolioResponse] = useState<PortfolioApiResponse | null>(null)
   const [, setDashboardState] = useState<ActivityDashboardState>("loading")
-  const [, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [preset, setPreset] = useState<ActivityDatePreset>("today")
   const [customStart, setCustomStart] = useState(() => formatDateInputValue(new Date()))
@@ -217,6 +217,11 @@ export default function DashboardActivityPage() {
           </p>
           {isRefreshing ? (
             <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers...</p>
+          ) : null}
+          {message ? (
+            <p className={`mt-0.5 text-xs ${portfolioResponse?.status === "error" ? "text-red-400" : "text-muted-foreground"}`}>
+              {message}
+            </p>
           ) : null}
         </div>
         <Button

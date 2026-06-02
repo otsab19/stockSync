@@ -427,7 +427,7 @@ function getEtoroTradeHistoryPaths() {
     return [DEFAULT_ETORO_DEMO_TRADE_HISTORY_PATH]
   }
 
-  return [LEGACY_ETORO_TRADE_HISTORY_PATH, DEFAULT_ETORO_REAL_TRADE_HISTORY_PATH]
+  return [DEFAULT_ETORO_REAL_TRADE_HISTORY_PATH, LEGACY_ETORO_TRADE_HISTORY_PATH]
 }
 
 function getEtoroActivityType(isBuy: boolean, phase: EtoroActivityPhase) {
