@@ -182,7 +182,7 @@ describe("eToro live mapper", () => {
     expect(activity.map((event) => event.companyName)).toEqual(["NVIDIA Corporation", "NVIDIA Corporation"])
   })
 
-  it("prefers the current real history endpoint over the legacy history endpoint", async () => {
+  it("merges current and legacy eToro history endpoints", async () => {
     const requestUrls: string[] = []
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       const requestUrl = String(url)
@@ -237,8 +237,14 @@ describe("eToro live mapper", () => {
 
     const activity = await fetchEtoroActivityFromApi({ apiKey: "api-key", apiSecret: "user-key" })
 
-    expect(activity.map((event) => event.timestamp)).toEqual(["2026-06-02T09:00:00Z", "2026-06-02T15:00:00Z"])
-    expect(requestUrls.some((url) => url.includes("/trading/info/trade/history"))).toBe(false)
+    expect(activity.map((event) => event.timestamp)).toEqual([
+      "2026-06-02T09:00:00Z",
+      "2026-06-02T15:00:00Z",
+      "2026-06-01T09:00:00Z",
+      "2026-06-01T15:00:00Z",
+    ])
+    expect(requestUrls.some((url) => url.includes("/trading/info/real/history"))).toBe(true)
+    expect(requestUrls.some((url) => url.includes("/trading/info/trade/history"))).toBe(true)
   })
 
   it("treats LSE history prices as pence when metadata is unavailable", async () => {

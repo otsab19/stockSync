@@ -853,6 +853,16 @@ function buildEtoroHistoryPath(baseHistoryPath: string, page: number, includeNam
   return `${baseHistoryPath}?${params.toString()}`
 }
 
+function getEtoroHistoryRowKey(row: EtoroApiRow) {
+  const instrumentId = getEtoroInstrumentId(row) ?? "unknown"
+  const positionId = getNumberValue(row, ["positionId", "PositionId"]) ?? "unknown"
+  const openTimestamp = getStringValue(row, ["openTimestamp", "OpenTimestamp", "openDateTime", "OpenDateTime", "openDate", "OpenDate", "createdAt", "CreatedAt"]) ?? "unknown"
+  const closeTimestamp = getStringValue(row, ["closeTimestamp", "CloseTimestamp", "closeDateTime", "CloseDateTime", "closeDate", "CloseDate", "lastUpdate", "LastUpdate", "closedAt", "ClosedAt", "updatedAt", "UpdatedAt"]) ?? "open"
+  const openRate = getEtoroHistoryPrice(row, "open") ?? "unknown"
+  const closeRate = getEtoroHistoryPrice(row, "close") ?? "open"
+  return `${instrumentId}:${positionId}:${openTimestamp}:${closeTimestamp}:${openRate}:${closeRate}`
+}
+
 function mapEtoroSearchRowToInstrument(row: EtoroApiRow): BrokerInstrument | null {
   const instrumentId = getEtoroInstrumentId(row)
   if (instrumentId === null) {
@@ -1510,7 +1520,8 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
   const headers = buildEtoroHeaders(apiKey, apiSecret)
   const attemptedResponses: string[] = []
   let historyRows: EtoroTradeHistoryRow[] = []
-  let loadedHistoryPath: string | null = null
+  const historyRowKeys = new Set<string>()
+  const loadedHistoryPaths: string[] = []
 
   for (const baseHistoryPath of getEtoroTradeHistoryPaths()) {
     for (const includeNames of [true, false]) {
@@ -1542,18 +1553,19 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
       }
 
       if (rows.length > 0) {
-        historyRows = rows as EtoroTradeHistoryRow[]
-        loadedHistoryPath = baseHistoryPath
+        rows.forEach((row) => {
+          const key = getEtoroHistoryRowKey(row)
+          if (historyRowKeys.has(key)) return
+          historyRowKeys.add(key)
+          historyRows.push(row as EtoroTradeHistoryRow)
+        })
+        loadedHistoryPaths.push(baseHistoryPath)
         break
       }
     }
-
-    if (loadedHistoryPath) {
-      break
-    }
   }
 
-  if (!loadedHistoryPath && attemptedResponses.length > 0) {
+  if (loadedHistoryPaths.length === 0 && attemptedResponses.length > 0) {
     throw new Error(`Failed to load eToro trade history. Tried: ${attemptedResponses.join("; ")}`)
   }
 
@@ -1597,7 +1609,7 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
     }
   }
 
-  logger.info({ broker: "etoro", historyPath: loadedHistoryPath, historyRows: historyRows.length, historyInstrumentIds: instrumentIds.length }, "Loaded eToro trade history rows")
+  logger.info({ broker: "etoro", historyPaths: loadedHistoryPaths, historyRows: historyRows.length, historyInstrumentIds: instrumentIds.length }, "Loaded eToro trade history rows")
 
   const activity = historyRows.flatMap((row) => {
     const openEvent = createEtoroActivityEvent(row, "open", metadataByInstrumentId)

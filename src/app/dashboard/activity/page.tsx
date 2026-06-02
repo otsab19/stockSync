@@ -27,6 +27,7 @@ import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
 import type { PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portfolio"
 
 type ActivityDashboardState = "loading" | "ready" | "setup_required" | "unauthorized" | "client_only" | "error"
+type ActivityGroupMode = "broker" | "side"
 
 const presetLabels: Record<ActivityDatePreset, string> = {
   today: "Today",
@@ -34,6 +35,11 @@ const presetLabels: Record<ActivityDatePreset, string> = {
   "last-7d": "Last 7 days",
   "last-30d": "Last 30 days",
   custom: "Custom",
+}
+
+const groupModeLabels: Record<ActivityGroupMode, string> = {
+  broker: "Broker",
+  side: "Buy/Sell",
 }
 
 function formatLongDateTime(value: string) {
@@ -139,12 +145,69 @@ function ActivityTable({
   )
 }
 
+function ActivitySideCards({
+  buys,
+  sells,
+  summary,
+  sellPlLookup,
+}: {
+  buys: PortfolioActivityEvent[]
+  sells: PortfolioActivityEvent[]
+  summary: ReturnType<typeof summarizeActivityPeriod>
+  sellPlLookup: Map<string, number | null>
+}) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Card className="border-white/10">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                <ArrowDownLeft className="size-4" />
+              </span>
+              <div>
+                <CardTitle className="text-base">Bought</CardTitle>
+                <CardDescription>{summary.buyCount} trade{summary.buyCount === 1 ? "" : "s"} · {formatMoney(summary.totalBoughtGbp, "GBP")}</CardDescription>
+              </div>
+            </div>
+            <Badge variant="outline" className="border-emerald-500/20 text-emerald-400">Buy</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ActivityTable events={buys} side="buy" sellPlLookup={sellPlLookup} />
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-400">
+                <ArrowUpRight className="size-4" />
+              </span>
+              <div>
+                <CardTitle className="text-base">Sold</CardTitle>
+                <CardDescription>{summary.sellCount} trade{summary.sellCount === 1 ? "" : "s"} · {formatMoney(summary.totalSoldGbp, "GBP")}</CardDescription>
+              </div>
+            </div>
+            <Badge variant="outline" className="border-red-500/20 text-red-400">Sell</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ActivityTable events={sells} side="sell" sellPlLookup={sellPlLookup} />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export default function DashboardActivityPage() {
   const [portfolioResponse, setPortfolioResponse] = useState<PortfolioApiResponse | null>(null)
   const [, setDashboardState] = useState<ActivityDashboardState>("loading")
   const [message, setMessage] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [preset, setPreset] = useState<ActivityDatePreset>("today")
+  const [groupMode, setGroupMode] = useState<ActivityGroupMode>("broker")
   const [customStart, setCustomStart] = useState(() => formatDateInputValue(new Date()))
   const [customEnd, setCustomEnd] = useState(() => formatDateInputValue(new Date()))
 
@@ -205,6 +268,30 @@ export default function DashboardActivityPage() {
     [periodActivity, sellPlLookup]
   )
   const { buys, sells } = useMemo(() => splitActivityBySide(periodActivity), [periodActivity])
+  const brokerGroups = useMemo(() => {
+    const groups = new Map<string, { key: string; label: string; activity: PortfolioActivityEvent[] }>()
+
+    periodActivity.forEach((event) => {
+      const existing = groups.get(event.broker) ?? {
+        key: event.broker,
+        label: event.brokerLabel,
+        activity: [],
+      }
+      existing.activity.push(event)
+      groups.set(event.broker, existing)
+    })
+
+    return Array.from(groups.values())
+      .map((group) => {
+        const split = splitActivityBySide(group.activity)
+        return {
+          ...group,
+          ...split,
+          summary: summarizeActivityPeriod(group.activity, sellPlLookup),
+        }
+      })
+      .sort((left, right) => right.activity.length - left.activity.length || left.label.localeCompare(right.label))
+  }, [periodActivity, sellPlLookup])
   const rangeLabel = useMemo(() => formatDateRangeLabel(dateRange.start, dateRange.end), [dateRange.end, dateRange.start])
 
   return (
@@ -279,6 +366,20 @@ export default function DashboardActivityPage() {
               </label>
             </div>
           ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Group by</span>
+            {(Object.keys(groupModeLabels) as ActivityGroupMode[]).map((value) => (
+              <Button
+                key={value}
+                size="sm"
+                variant={groupMode === value ? "default" : "outline"}
+                className={groupMode === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                onClick={() => setGroupMode(value)}
+              >
+                {groupModeLabels[value]}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
       </Card>
 
@@ -321,48 +422,27 @@ export default function DashboardActivityPage() {
             <CardDescription>Try a wider date range or refresh from your brokers.</CardDescription>
           </CardHeader>
         </Card>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Card className="border-white/10">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-8 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
-                    <ArrowDownLeft className="size-4" />
-                  </span>
-                  <div>
-                    <CardTitle className="text-base">Bought</CardTitle>
-                    <CardDescription>{summary.buyCount} trade{summary.buyCount === 1 ? "" : "s"} · {formatMoney(summary.totalBoughtGbp, "GBP")}</CardDescription>
-                  </div>
+      ) : groupMode === "broker" ? (
+        <div className="space-y-4">
+          {brokerGroups.map((group) => (
+            <section key={group.key} className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                <div>
+                  <h2 className="text-base font-semibold">{group.label}</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {group.activity.length} trade leg{group.activity.length === 1 ? "" : "s"} · Bought {formatMoney(group.summary.totalBoughtGbp, "GBP")} · Sold {formatMoney(group.summary.totalSoldGbp, "GBP")}
+                  </p>
                 </div>
-                <Badge variant="outline" className="border-emerald-500/20 text-emerald-400">Buy</Badge>
+                <Badge variant="outline" className={group.summary.totalRealisedPlGbp >= 0 ? "border-emerald-500/20 text-emerald-400" : "border-red-500/20 text-red-400"}>
+                  P/L {formatSignedMoney(group.summary.totalRealisedPlGbp)}
+                </Badge>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <ActivityTable events={buys} side="buy" sellPlLookup={sellPlLookup} />
-            </CardContent>
-          </Card>
-
-          <Card className="border-white/10">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-8 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-400">
-                    <ArrowUpRight className="size-4" />
-                  </span>
-                  <div>
-                    <CardTitle className="text-base">Sold</CardTitle>
-                    <CardDescription>{summary.sellCount} trade{summary.sellCount === 1 ? "" : "s"} · {formatMoney(summary.totalSoldGbp, "GBP")}</CardDescription>
-                  </div>
-                </div>
-                <Badge variant="outline" className="border-red-500/20 text-red-400">Sell</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <ActivityTable events={sells} side="sell" sellPlLookup={sellPlLookup} />
-            </CardContent>
-          </Card>
+              <ActivitySideCards buys={group.buys} sells={group.sells} summary={group.summary} sellPlLookup={sellPlLookup} />
+            </section>
+          ))}
         </div>
+      ) : (
+        <ActivitySideCards buys={buys} sells={sells} summary={summary} sellPlLookup={sellPlLookup} />
       )}
     </PageShell>
   )
