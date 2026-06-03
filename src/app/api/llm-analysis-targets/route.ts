@@ -106,7 +106,8 @@ export async function GET(request: Request) {
   const { data, error } = await query as unknown as { data: AnalysisTargetRow[] | null; error: Error | null }
 
   if (error) {
-    return NextResponse.json({ message: "Failed to load analysis targets." }, { status: 500 })
+    console.error("Failed to load analysis targets:", error)
+    return NextResponse.json({ message: `Failed to load analysis targets: ${error.message}` }, { status: 500 })
   }
 
   return NextResponse.json({ targets: (data ?? []).map(mapTargetRow) })
@@ -154,7 +155,8 @@ export async function POST(request: Request) {
     .single()
 
   if (error || !data) {
-    return NextResponse.json({ message: "Failed to save analysis target." }, { status: 500 })
+    console.error("Failed to save analysis target:", error)
+    return NextResponse.json({ message: `Failed to save analysis target${error?.message ? `: ${error.message}` : "."}` }, { status: 500 })
   }
 
   return NextResponse.json({ target: mapTargetRow(data) })

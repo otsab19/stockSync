@@ -10,7 +10,7 @@ create table if not exists public.llm_analysis_targets (
   notes text,
   last_analyzed_at timestamptz,
   created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now())
+  updated_at timestamptz not null default timezone('utc', now()),
   unique (user_id, ticker, broker)
 );
 
