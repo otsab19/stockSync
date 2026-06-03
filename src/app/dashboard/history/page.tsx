@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Fragment } from "react"
 import { ArrowDownUp, ChevronDown, ChevronRight, RefreshCw, TrendingUp, TrendingDown, BarChart3, List } from "lucide-react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { PageShell } from "@/components/app/page-shell"
+import { PageHeader, PageShell } from "@/components/app/page-shell"
+import { BrokerFreshnessList, FreshnessBadge } from "@/components/dashboard/freshness-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -559,19 +560,23 @@ export default function DashboardHistoryPage() {
 
   return (
     <PageShell>
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Trade history</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Showing {displayActivity.length} of {tradeStats.completedTradeCount} completed trade{tradeStats.completedTradeCount === 1 ? "" : "s"} ({tradeStats.orderLegCount} order legs)
-          </p>
-          {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers (T212 history may take ~30s due to rate limits)...</p>}
-        </div>
-        <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
-          <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
-          {isRefreshing ? "Syncing..." : "Refresh"}
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="History"
+        title="Trade history"
+        description={`Showing ${displayActivity.length} of ${tradeStats.completedTradeCount} completed trade${tradeStats.completedTradeCount === 1 ? "" : "s"} (${tradeStats.orderLegCount} order legs). P/L combines broker-reported realised values with FIFO estimates where needed.`}
+        badges={
+          <>
+            <FreshnessBadge meta={portfolioResponse?.meta} source={portfolioResponse?.source ?? "server"} />
+            <BrokerFreshnessList meta={portfolioResponse?.meta} />
+          </>
+        }
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+            <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
+            {isRefreshing ? "Syncing..." : "Refresh"}
+          </Button>
+        }
+      />
 
       {/* KPI Strip */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">

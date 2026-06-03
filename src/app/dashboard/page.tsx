@@ -3,13 +3,15 @@
 import Link from "next/link"
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { ChartCandlestick, RefreshCw } from "lucide-react"
-import { PageShell } from "@/components/app/page-shell"
+import { PageHeader, PageShell } from "@/components/app/page-shell"
+import { BrokerFreshnessList, FreshnessBadge } from "@/components/dashboard/freshness-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { FilterBar } from "@/components/dashboard/filter-bar"
 import { KpiStrip } from "@/components/dashboard/kpi-strip"
 import { PortfolioCharts } from "@/components/dashboard/portfolio-charts"
 import { PortfolioTable } from "@/components/dashboard/portfolio-table"
+import { buildSellPlLookup, filterActivityByDateRange, getDateRangeForPreset, summarizeActivityPeriod } from "@/lib/dashboard/activity-view"
 import { buildInsights, defaultFilterState, filterActivity, filterPortfolio, formatMoney, getDisplayProfit } from "@/lib/dashboard/filter-engine"
 import type { FilterState } from "@/lib/dashboard/filter-engine"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
@@ -69,6 +71,60 @@ function formatMixedProfitTotals(portfolio: PortfolioPosition[], currencyMode: C
   ]
     .filter(Boolean)
     .join(" • ")
+}
+
+function formatSignedMoney(value: number) {
+  return `${value >= 0 ? "+" : ""}${formatMoney(value, "GBP")}`
+}
+
+function DashboardTodaySummary({
+  summary,
+  activityCount,
+  biggestMovers,
+}: {
+  summary: ReturnType<typeof summarizeActivityPeriod>
+  activityCount: number
+  biggestMovers: PortfolioPosition[]
+}) {
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Bought today</p>
+        <p className="mt-2 text-xl font-semibold tracking-tight text-emerald-400">{formatMoney(summary.totalBoughtGbp, "GBP")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{summary.buyCount} buy leg{summary.buyCount === 1 ? "" : "s"}</p>
+      </div>
+      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Sold today</p>
+        <p className="mt-2 text-xl font-semibold tracking-tight text-red-400">{formatMoney(summary.totalSoldGbp, "GBP")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{summary.sellCount} sell leg{summary.sellCount === 1 ? "" : "s"}</p>
+      </div>
+      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Realised P/L</p>
+        <p className={`mt-2 text-xl font-semibold tracking-tight ${summary.totalRealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+          {formatSignedMoney(summary.totalRealisedPlGbp)}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">Closed sells today</p>
+      </div>
+      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Activity</p>
+        <p className="mt-2 text-xl font-semibold tracking-tight">{activityCount}</p>
+        <p className="mt-1 text-xs text-muted-foreground">Trade legs today</p>
+      </div>
+      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Biggest mover</p>
+        {biggestMovers[0] ? (
+          <>
+            <p className="mt-2 truncate text-xl font-semibold tracking-tight">{biggestMovers[0].ticker}</p>
+            <p className={`mt-1 text-xs font-medium ${biggestMovers[0].totalPLPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {biggestMovers[0].totalPLPercent >= 0 ? "+" : ""}{biggestMovers[0].totalPLPercent.toFixed(2)}%
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">No holdings yet</p>
+        )}
+      </div>
+    </section>
+  )
 }
 
 
@@ -137,6 +193,18 @@ function DashboardContent() {
 
     return buildInsights(filteredPortfolio, filteredActivity)
   }, [filteredActivity, filters, filteredPortfolio, portfolioResponse])
+  const todayActivity = useMemo(() => {
+    const range = getDateRangeForPreset("today")
+    return filterActivityByDateRange(filteredActivity, range.start, range.end)
+  }, [filteredActivity])
+  const todaySummary = useMemo(
+    () => summarizeActivityPeriod(todayActivity, buildSellPlLookup(filteredActivity)),
+    [filteredActivity, todayActivity]
+  )
+  const biggestMovers = useMemo(
+    () => filteredPortfolio.slice().sort((left, right) => Math.abs(right.totalPLPercent) - Math.abs(left.totalPLPercent)).slice(0, 3),
+    [filteredPortfolio]
+  )
   const availableBrokers = useMemo(
     () => Array.from(new Map(portfolio.map((position) => [position.broker, { broker: position.broker, label: position.brokerLabel }])).values()),
     [portfolio]
@@ -149,17 +217,18 @@ function DashboardContent() {
 
   return (
     <PageShell>
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          {isRefreshing && <p className="mt-0.5 text-xs text-muted-foreground">Syncing latest broker data...</p>}
-          {hasPositions && (
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {totalValueLabel} • {totalReturnLabel}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        eyebrow="Portfolio"
+        title="Dashboard"
+        description={hasPositions ? `${totalValueLabel} • ${totalReturnLabel}` : "Connect Trading 212 or eToro to start tracking holdings, trades, and alerts."}
+        badges={
+          <>
+            <FreshnessBadge meta={portfolioResponse?.meta} source={portfolioResponse?.source ?? "server"} />
+            <BrokerFreshnessList meta={portfolioResponse?.meta} />
+          </>
+        }
+        actions={
+          <>
           <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
             <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
             {isRefreshing ? "Refreshing..." : "Refresh"}
@@ -171,8 +240,9 @@ function DashboardContent() {
             <ChartCandlestick className="size-3.5" />
             History
           </Link>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {isEmptyState ? (
         <Card className="border-dashed border-white/12 bg-white/[0.02]">
@@ -188,6 +258,8 @@ function DashboardContent() {
         </Card>
       ) : (
         <>
+          <DashboardTodaySummary summary={todaySummary} activityCount={todayActivity.length} biggestMovers={biggestMovers} />
+
           <KpiStrip
             insights={filteredInsights}
             currencyMode={filters.currencyMode}

@@ -69,6 +69,14 @@ type TargetsResponse = {
   message?: string
 }
 
+type RawOutputObject = {
+  whatWouldChangeView?: unknown
+  changeView?: unknown
+  keyReasons?: unknown
+  reasons?: unknown
+  summary?: unknown
+}
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
 }
@@ -108,6 +116,19 @@ function hasRawOutput(value: unknown) {
   if (Array.isArray(value)) return value.length > 0
   if (typeof value === "object") return Object.keys(value).length > 0
   return true
+}
+
+function getRawOutputText(value: unknown, keys: Array<keyof RawOutputObject>) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const output = value as RawOutputObject
+
+  for (const key of keys) {
+    const entry = output[key]
+    if (Array.isArray(entry)) return entry.map(String).join("\n")
+    if (typeof entry === "string" && entry.trim()) return entry
+  }
+
+  return null
 }
 
 function matchesTickerSearch(searchTerm: string, values: Array<string | null | undefined>) {
@@ -156,6 +177,11 @@ export default function DashboardAnalysisPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isAddingTarget, setIsAddingTarget] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [modelFilter, setModelFilter] = useState("all")
+  const [recommendationFilter, setRecommendationFilter] = useState("all")
+  const [providerFilter, setProviderFilter] = useState("all")
+  const [dateFilter, setDateFilter] = useState("all")
+  const [targetStatusFilter, setTargetStatusFilter] = useState<AnalysisTargetStatus | "all">("all")
   const [expandedAnalysisId, setExpandedAnalysisId] = useState<string | null>(null)
   const [tickerSearch, setTickerSearch] = useState("")
   const [tickerSearchResults, setTickerSearchResults] = useState<InstrumentSearchResult[]>([])
@@ -300,27 +326,56 @@ export default function DashboardAnalysisPage() {
   }
 
   const latestAnalysis = analyses[0] ?? null
+  const modelOptions = useMemo(() => Array.from(new Set(analyses.map((analysis) => analysis.model))).sort(), [analyses])
+  const providerOptions = useMemo(() => Array.from(new Set(analyses.map((analysis) => analysis.provider))).sort(), [analyses])
+  const recommendationOptions = useMemo(() => Array.from(new Set(analyses.map((analysis) => analysis.recommendation))).sort(), [analyses])
   const filteredAnalyses = useMemo(
-    () => analyses.filter((analysis) => matchesTickerSearch(searchTerm, [
-      analysis.ticker,
-      analysis.companyName,
-      analysis.broker,
-      analysis.model,
-      analysis.recommendation,
-    ])),
-    [analyses, searchTerm]
+    () => analyses.filter((analysis) => {
+      const matchesSearch = matchesTickerSearch(searchTerm, [
+        analysis.ticker,
+        analysis.companyName,
+        analysis.broker,
+        analysis.model,
+        analysis.recommendation,
+      ])
+      const matchesModel = modelFilter === "all" || analysis.model === modelFilter
+      const matchesProvider = providerFilter === "all" || analysis.provider === providerFilter
+      const matchesRecommendation = recommendationFilter === "all" || analysis.recommendation === recommendationFilter
+      const matchesDate = dateFilter === "all" || analysis.analysisDate === dateFilter
+      return matchesSearch && matchesModel && matchesProvider && matchesRecommendation && matchesDate
+    }),
+    [analyses, dateFilter, modelFilter, providerFilter, recommendationFilter, searchTerm]
   )
   const filteredTargets = useMemo(
-    () => targets.filter((target) => matchesTickerSearch(searchTerm, [
-      target.ticker,
-      target.companyName,
-      target.broker,
-      target.status,
-    ])),
-    [targets, searchTerm]
+    () => targets.filter((target) => {
+      const matchesSearch = matchesTickerSearch(searchTerm, [
+        target.ticker,
+        target.companyName,
+        target.broker,
+        target.status,
+      ])
+      const matchesStatus = targetStatusFilter === "all" || target.status === targetStatusFilter
+      return matchesSearch && matchesStatus
+    }),
+    [targets, searchTerm, targetStatusFilter]
   )
   const pendingTargets = useMemo(() => targets.filter((target) => target.status === "pending").length, [targets])
   const analyzedTickers = useMemo(() => new Set(analyses.map((analysis) => analysis.ticker)).size, [analyses])
+  const comparisonGroups = useMemo(() => {
+    const groups = new Map<string, LlmAnalysis[]>()
+    filteredAnalyses.forEach((analysis) => {
+      const existing = groups.get(analysis.ticker) ?? []
+      existing.push(analysis)
+      groups.set(analysis.ticker, existing)
+    })
+    return Array.from(groups.entries())
+      .map(([ticker, tickerAnalyses]) => ({
+        ticker,
+        analyses: tickerAnalyses.sort((left, right) => new Date(right.analysisDate).getTime() - new Date(left.analysisDate).getTime()),
+      }))
+      .filter((group) => group.analyses.length > 1)
+      .slice(0, 6)
+  }, [filteredAnalyses])
 
   return (
     <PageShell>
@@ -366,6 +421,73 @@ export default function DashboardAnalysisPage() {
           <p className="mt-1 text-xs text-muted-foreground">{latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : "No analysis saved yet"}</p>
         </div>
       </section>
+
+      <Card className="border-white/10">
+        <CardHeader>
+          <CardTitle className="text-base">Analysis filters</CardTitle>
+          <CardDescription>Filter saved analysis and the source queue by model, recommendation, provider, date, and target status.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <label className="space-y-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Model</span>
+            <select value={modelFilter} onChange={(event) => setModelFilter(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+              <option value="all">All models</option>
+              {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Recommendation</span>
+            <select value={recommendationFilter} onChange={(event) => setRecommendationFilter(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+              <option value="all">All recommendations</option>
+              {recommendationOptions.map((recommendation) => <option key={recommendation} value={recommendation}>{recommendation}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Provider</span>
+            <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+              <option value="all">All providers</option>
+              {providerOptions.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Analysis date</span>
+            <input type="date" value={dateFilter === "all" ? "" : dateFilter} onChange={(event) => setDateFilter(event.target.value || "all")} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none" />
+          </label>
+          <label className="space-y-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Target status</span>
+            <select value={targetStatusFilter} onChange={(event) => setTargetStatusFilter(event.target.value as AnalysisTargetStatus | "all")} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+              <option value="all">All targets</option>
+              <option value="pending">Pending</option>
+              <option value="running">Running</option>
+              <option value="analyzed">Analyzed</option>
+              <option value="paused">Paused</option>
+            </select>
+          </label>
+        </CardContent>
+      </Card>
+
+      {comparisonGroups.length > 0 ? (
+        <Card className="border-white/10">
+          <CardHeader>
+            <CardTitle className="text-base">Recommendation comparison</CardTitle>
+            <CardDescription>Recent changes by ticker across dates or models.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 lg:grid-cols-2">
+            {comparisonGroups.map((group) => (
+              <div key={group.ticker} className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
+                <p className="font-medium">{group.ticker}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {group.analyses.slice(0, 5).map((analysis) => (
+                    <Badge key={analysis.id} variant="outline" className={getRecommendationClassName(analysis.recommendation)}>
+                      {formatDate(analysis.analysisDate)} · {analysis.model} · {analysis.recommendation}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <Card className="border-white/10">
@@ -563,6 +685,8 @@ export default function DashboardAnalysisPage() {
                 </TableRow>
               ) : filteredAnalyses.map((analysis) => {
                 const isExpanded = expandedAnalysisId === analysis.id
+                const keyReasons = getRawOutputText(analysis.rawOutput, ["keyReasons", "reasons", "summary"])
+                const changeView = getRawOutputText(analysis.rawOutput, ["whatWouldChangeView", "changeView"])
                 return (
                   <Fragment key={analysis.id}>
                     <TableRow>
@@ -602,6 +726,8 @@ export default function DashboardAnalysisPage() {
                       <TableRow key={`${analysis.id}:expanded`} className="bg-white/[0.018] hover:bg-white/[0.018]">
                         <TableCell colSpan={7} className="whitespace-normal p-4">
                           <div className="grid gap-4 lg:grid-cols-2">
+                            <DetailBlock title="Key reasons">{keyReasons}</DetailBlock>
+                            <DetailBlock title="What would change the view">{changeView}</DetailBlock>
                             <DetailBlock title="Thesis">{analysis.thesis}</DetailBlock>
                             <DetailBlock title="Risks">{analysis.risks}</DetailBlock>
                             <DetailBlock title="Prompt">{analysis.prompt}</DetailBlock>

@@ -1,5 +1,6 @@
 import { createClient, getSupabaseSetupMessage } from "@/utils/supabase/server"
-import type { PortfolioApiResponse, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
+import { calculateFreshness } from "@/lib/dashboard/freshness"
+import type { PortfolioApiResponse, PortfolioActivityEvent, PortfolioDataMeta, PortfolioPosition } from "@/types/portfolio"
 import type { ServerPortfolioRepository } from "@/lib/portfolio/repository"
 import { normalizeImportedHolding } from "@/lib/portfolio/position-normalizer"
 import { createFailurePortfolioResponse, createSuccessPortfolioResponse } from "@/lib/dashboard/portfolio-response"
@@ -33,6 +34,16 @@ type ActivityRow = {
   timestamp: string
 }
 
+type BrokerConnectionRow = {
+  broker: "t212" | "etoro"
+  source_type: "manual_csv" | "broker_api"
+  sync_mode: "manual" | "scheduled"
+  sync_status: "never_synced" | "ready" | "running" | "succeeded" | "failed"
+  is_enabled: boolean
+  last_synced_at: string | null
+  last_error: string | null
+}
+
 function toNumber(value: number | string | null | undefined) {
   const parsed = typeof value === "number" ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -40,6 +51,52 @@ function toNumber(value: number | string | null | undefined) {
 
 function getBrokerLabel(broker: "t212" | "etoro") {
   return broker === "t212" ? "Trading 212" : "eToro"
+}
+
+function buildPortfolioMeta(
+  positionRows: PositionRow[],
+  connectionRows: BrokerConnectionRow[]
+): PortfolioDataMeta {
+  const staleAfterMinutes = 60
+  const positionUpdatedByBroker = new Map<string, string>()
+
+  positionRows.forEach((row) => {
+    const current = positionUpdatedByBroker.get(row.broker)
+    if (!current || row.updated_at > current) {
+      positionUpdatedByBroker.set(row.broker, row.updated_at)
+    }
+  })
+
+  const brokerDetails = connectionRows.map((connection) => {
+    const lastSyncedAt = connection.last_synced_at ?? positionUpdatedByBroker.get(connection.broker)
+    const freshness = calculateFreshness(lastSyncedAt, "server", staleAfterMinutes, Boolean(connection.last_error))
+
+    return {
+      broker: connection.broker,
+      sourceKind: connection.source_type === "broker_api" ? "api_sync" as const : "csv_import" as const,
+      lastSyncedAt,
+      syncMode: connection.sync_mode,
+      syncStatus: connection.sync_status,
+      freshness,
+      lastError: connection.last_error,
+    }
+  })
+
+  const latestSyncedAt = [
+    ...positionRows.map((row) => row.updated_at),
+    ...connectionRows.map((row) => row.last_synced_at).filter(Boolean),
+  ].sort().at(-1)
+  const lastError = connectionRows.find((row) => row.last_error)?.last_error ?? null
+
+  return {
+    sourceKind: "api_sync",
+    lastSyncedAt: latestSyncedAt ?? undefined,
+    syncMode: connectionRows.some((row) => row.sync_mode === "scheduled") ? "scheduled" : "manual",
+    staleAfterMinutes,
+    freshness: calculateFreshness(latestSyncedAt, "server", staleAfterMinutes, Boolean(lastError)),
+    lastError,
+    brokerDetails,
+  }
 }
 
 function mapPositionRow(row: PositionRow): PortfolioPosition {
@@ -107,12 +164,24 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
       )
     }
 
-    const { data: positionRows, error: positionsError } = await supabase
-      .from("positions")
-      .select("broker, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at")
-      .eq("user_id", user.id)
-      .order("broker")
-      .order("ticker") as unknown as { data: PositionRow[] | null; error: Error | null }
+    const [positionsResponse, connectionsResponse] = await Promise.all([
+      supabase
+        .from("positions")
+        .select("broker, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at")
+        .eq("user_id", user.id)
+        .order("broker")
+        .order("ticker"),
+      supabase
+        .from("broker_connections")
+        .select("broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error")
+        .eq("user_id", user.id)
+        .eq("is_enabled", true),
+    ]) as unknown as [
+      { data: PositionRow[] | null; error: Error | null },
+      { data: BrokerConnectionRow[] | null; error: Error | null },
+    ]
+
+    const { data: positionRows, error: positionsError } = positionsResponse
 
     if (positionsError) {
       return createFailurePortfolioResponse(
@@ -122,6 +191,8 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
         "Failed to load synced positions from Supabase."
       )
     }
+
+    const connectionRows = connectionsResponse.error ? [] : (connectionsResponse.data ?? [])
 
     const { data: activityRows, error: activityError } = await supabase
       .from("activity_events")
@@ -140,11 +211,7 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
 
     const portfolio = (positionRows ?? []).map(mapPositionRow)
     const activity = (activityRows ?? []).map(mapActivityRow)
-    const latestSyncedAt = (positionRows ?? [])
-      .map((row) => row.updated_at)
-      .filter(Boolean)
-      .sort()
-      .at(-1)
+    const meta = buildPortfolioMeta(positionRows ?? [], connectionRows)
 
     const message = portfolio.length === 0
       ? "No synced Supabase portfolio data yet. Sync a broker from the integrations page to populate the dashboard."
@@ -155,11 +222,7 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
       "supabase",
       "server",
       message,
-      {
-        sourceKind: "api_sync",
-        lastSyncedAt: latestSyncedAt,
-        syncMode: "scheduled",
-      },
+      meta,
       activity
     )
   }

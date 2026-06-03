@@ -29,6 +29,8 @@ export type PortfolioBackend = "supabase" | "browser"
 export type PortfolioSource = "server" | "browser_local"
 export type PortfolioDataSourceKind = "sample" | "csv_import" | "api_sync"
 export type PortfolioSyncMode = "manual" | "scheduled"
+export type PortfolioFreshness = "live" | "cached" | "stale"
+export type PortfolioBrokerSyncStatus = "never_synced" | "ready" | "running" | "succeeded" | "failed"
 
 export type PortfolioDataMeta = {
   sourceKind: PortfolioDataSourceKind
@@ -36,12 +38,18 @@ export type PortfolioDataMeta = {
   fileName?: string
   lastSyncedAt?: string
   syncMode?: PortfolioSyncMode
+  freshness?: PortfolioFreshness
+  staleAfterMinutes?: number
+  lastError?: string | null
   brokerDetails?: Array<{
     broker: BrokerId
     sourceKind: PortfolioDataSourceKind
     fileName?: string
     lastSyncedAt?: string
     syncMode?: PortfolioSyncMode
+    syncStatus?: PortfolioBrokerSyncStatus
+    freshness?: PortfolioFreshness
+    lastError?: string | null
   }>
 }
 

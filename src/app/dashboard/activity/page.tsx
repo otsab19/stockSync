@@ -1,8 +1,9 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { ArrowDownLeft, ArrowUpRight, RefreshCw } from "lucide-react"
-import { PageShell } from "@/components/app/page-shell"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, RefreshCw, Search } from "lucide-react"
+import { PageHeader, PageShell } from "@/components/app/page-shell"
+import { BrokerFreshnessList, FreshnessBadge } from "@/components/dashboard/freshness-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,10 +25,12 @@ import {
 } from "@/lib/dashboard/activity-view"
 import { formatMoney } from "@/lib/dashboard/filter-engine"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
+import { cn } from "@/lib/utils"
 import type { PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portfolio"
 
 type ActivityDashboardState = "loading" | "ready" | "setup_required" | "unauthorized" | "client_only" | "error"
 type ActivityGroupMode = "broker" | "side"
+type ActivitySortBy = "timestamp" | "ticker" | "amount" | "shares"
 
 const presetLabels: Record<ActivityDatePreset, string> = {
   today: "Today",
@@ -40,6 +43,13 @@ const presetLabels: Record<ActivityDatePreset, string> = {
 const groupModeLabels: Record<ActivityGroupMode, string> = {
   broker: "Broker",
   side: "Buy/Sell",
+}
+
+const activitySortLabels: Record<ActivitySortBy, string> = {
+  timestamp: "Newest",
+  ticker: "Ticker",
+  amount: "Amount",
+  shares: "Shares",
 }
 
 function formatLongDateTime(value: string) {
@@ -75,6 +85,31 @@ function shouldShowCompanyName(event: PortfolioActivityEvent) {
   return event.companyName.trim().toUpperCase() !== event.ticker.trim().toUpperCase()
 }
 
+function filterAndSortActivity(activity: PortfolioActivityEvent[], searchQuery: string, sortBy: ActivitySortBy) {
+  const query = searchQuery.trim().toLowerCase()
+  const filtered = activity.filter((event) => {
+    if (!query) return true
+    return event.ticker.toLowerCase().includes(query)
+      || event.companyName.toLowerCase().includes(query)
+      || event.brokerLabel.toLowerCase().includes(query)
+      || event.orderType?.toLowerCase().includes(query)
+  })
+
+  return filtered.sort((left, right) => {
+    switch (sortBy) {
+      case "ticker":
+        return left.ticker.localeCompare(right.ticker) || new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
+      case "amount":
+        return right.grossAmountGbp - left.grossAmountGbp
+      case "shares":
+        return right.shares - left.shares
+      case "timestamp":
+      default:
+        return new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
+    }
+  })
+}
+
 function ActivityTable({
   events,
   side,
@@ -84,6 +119,8 @@ function ActivityTable({
   side: "buy" | "sell"
   sellPlLookup: Map<string, number | null>
 }) {
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null)
+
   if (events.length === 0) {
     return (
       <div className="flex min-h-[12rem] items-center justify-center px-4 py-8 text-sm text-muted-foreground">
@@ -104,41 +141,67 @@ function ActivityTable({
             <TableHead className="min-w-[80px] text-right">Price</TableHead>
             <TableHead className="min-w-[90px] text-right">Amount</TableHead>
             {side === "sell" ? <TableHead className="min-w-[90px] text-right">P/L</TableHead> : null}
+            <TableHead className="min-w-[80px] text-right">Details</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {events.map((event) => (
-            <TableRow key={event.id} className="bg-white/[0.01]">
-              <TableCell><span className="text-xs">{formatLongDateTime(event.timestamp)}</span></TableCell>
-              <TableCell>
-                <div className="flex flex-col">
-                  <span className="text-xs font-medium">{event.ticker}</span>
-                  {shouldShowCompanyName(event) ? (
-                    <span className="text-[0.6rem] text-muted-foreground">{event.companyName}</span>
+          {events.map((event) => {
+            const isExpanded = expandedEventId === event.id
+            const plGbp = side === "sell" ? getSellPlGbp(event, sellPlLookup) : null
+
+            return (
+              <Fragment key={event.id}>
+                <TableRow className="bg-white/[0.01]">
+                  <TableCell><span className="text-xs">{formatLongDateTime(event.timestamp)}</span></TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium">{event.ticker}</span>
+                      {shouldShowCompanyName(event) ? (
+                        <span className="text-[0.6rem] text-muted-foreground">{event.companyName}</span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
+                  <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(event.shares)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(event.price, event.nativeCurrency)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-xs">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
+                  {side === "sell" ? (
+                    <TableCell className="text-right">
+                      {plGbp === null ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <span className={`text-xs font-semibold tabular-nums ${plGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {formatSignedMoney(plGbp)}
+                        </span>
+                      )}
+                    </TableCell>
                   ) : null}
-                </div>
-              </TableCell>
-              <TableCell><span className="text-xs text-muted-foreground">{event.brokerLabel}</span></TableCell>
-              <TableCell className="text-right tabular-nums text-xs">{formatTradeShares(event.shares)}</TableCell>
-              <TableCell className="text-right tabular-nums text-xs">{formatTradePrice(event.price, event.nativeCurrency)}</TableCell>
-              <TableCell className="text-right tabular-nums text-xs">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
-              {side === "sell" ? (
-                <TableCell className="text-right">
-                  {(() => {
-                    const plGbp = getSellPlGbp(event, sellPlLookup)
-                    if (plGbp === null) {
-                      return <span className="text-xs text-muted-foreground">—</span>
-                    }
-                    return (
-                      <span className={`text-xs font-semibold tabular-nums ${plGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {formatSignedMoney(plGbp)}
-                      </span>
-                    )
-                  })()}
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
+                  <TableCell className="text-right">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedEventId(isExpanded ? null : event.id)}
+                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                    >
+                      Details
+                      <ChevronDown className={cn("size-3 transition-transform", isExpanded && "rotate-180")} />
+                    </button>
+                  </TableCell>
+                </TableRow>
+                {isExpanded ? (
+                  <TableRow className="bg-white/[0.018] hover:bg-white/[0.018]">
+                    <TableCell colSpan={side === "sell" ? 8 : 7} className="whitespace-normal p-4">
+                      <div className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                        <div><span className="block uppercase tracking-[0.16em]">Order type</span><span className="mt-1 block text-foreground">{event.orderType || "Not provided"}</span></div>
+                        <div><span className="block uppercase tracking-[0.16em]">Native amount</span><span className="mt-1 block text-foreground">{formatTradePrice(event.grossAmount, event.nativeCurrency)}</span></div>
+                        <div><span className="block uppercase tracking-[0.16em]">GBP amount</span><span className="mt-1 block text-foreground">{formatMoney(event.grossAmountGbp, "GBP")}</span></div>
+                        <div><span className="block uppercase tracking-[0.16em]">P/L source</span><span className="mt-1 block text-foreground">{event.realisedProfitGbp !== undefined ? "Broker reported" : side === "sell" ? "FIFO estimate" : "Not applicable"}</span></div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </Fragment>
+            )
+          })}
         </TableBody>
       </Table>
     </div>
@@ -208,6 +271,8 @@ export default function DashboardActivityPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [preset, setPreset] = useState<ActivityDatePreset>("today")
   const [groupMode, setGroupMode] = useState<ActivityGroupMode>("broker")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [sortBy, setSortBy] = useState<ActivitySortBy>("timestamp")
   const [customStart, setCustomStart] = useState(() => formatDateInputValue(new Date()))
   const [customEnd, setCustomEnd] = useState(() => formatDateInputValue(new Date()))
 
@@ -246,8 +311,6 @@ export default function DashboardActivityPage() {
     return dedupeActivityEvents(activity)
   }, [portfolioResponse])
 
-  const todayKey = formatDateInputValue(new Date())
-
   const dateRange = useMemo(() => {
     if (preset === "custom") {
       const start = startOfDay(parseDateInputValue(customStart))
@@ -255,13 +318,17 @@ export default function DashboardActivityPage() {
       return start.getTime() <= end.getTime() ? { start, end } : { start: end, end: start }
     }
     return getDateRangeForPreset(preset)
-  }, [customEnd, customStart, preset, todayKey])
+  }, [customEnd, customStart, preset])
 
   const sellPlLookup = useMemo(() => buildSellPlLookup(rawActivity), [rawActivity])
 
-  const periodActivity = useMemo(
+  const rangeActivity = useMemo(
     () => filterActivityByDateRange(rawActivity, dateRange.start, dateRange.end),
     [dateRange.end, dateRange.start, rawActivity]
+  )
+  const periodActivity = useMemo(
+    () => filterAndSortActivity(rangeActivity, searchQuery, sortBy),
+    [rangeActivity, searchQuery, sortBy]
   )
   const summary = useMemo(
     () => summarizeActivityPeriod(periodActivity, sellPlLookup),
@@ -293,35 +360,40 @@ export default function DashboardActivityPage() {
       .sort((left, right) => right.activity.length - left.activity.length || left.label.localeCompare(right.label))
   }, [periodActivity, sellPlLookup])
   const rangeLabel = useMemo(() => formatDateRangeLabel(dateRange.start, dateRange.end), [dateRange.end, dateRange.start])
+  const hasBrokerError = Boolean(portfolioResponse?.meta?.lastError || portfolioResponse?.meta?.brokerDetails?.some((broker) => broker.lastError))
+  const noActivityReason = rawActivity.length === 0
+    ? hasBrokerError
+      ? "A broker sync error was reported. Refresh again or check Connections for details."
+      : "No synced trade activity is stored yet. Run a manual sync to import broker trades."
+    : rangeActivity.length === 0
+      ? "There is synced activity, but none in this date range."
+      : "Your search or filters are hiding the trades in this range."
 
   return (
     <PageShell>
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Trading activity</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {rangeLabel} · {periodActivity.length} trade leg{periodActivity.length === 1 ? "" : "s"}
-          </p>
-          {isRefreshing ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">Syncing from brokers...</p>
-          ) : null}
-          {message ? (
-            <p className={`mt-0.5 text-xs ${portfolioResponse?.status === "error" ? "text-red-400" : "text-muted-foreground"}`}>
-              {message}
-            </p>
-          ) : null}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void fetchPortfolio({ refresh: true })}
-          disabled={isRefreshing}
-          className="gap-2 rounded-xl border-white/10 bg-white/[0.03]"
-        >
-          <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
-          {isRefreshing ? "Syncing..." : "Refresh"}
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Trades"
+        title="Trading activity"
+        description={`${rangeLabel} · ${periodActivity.length} trade leg${periodActivity.length === 1 ? "" : "s"}${message ? ` · ${message}` : ""}`}
+        badges={
+          <>
+            <FreshnessBadge meta={portfolioResponse?.meta} source={portfolioResponse?.source ?? "server"} />
+            <BrokerFreshnessList meta={portfolioResponse?.meta} />
+          </>
+        }
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void fetchPortfolio({ refresh: true })}
+            disabled={isRefreshing}
+            className="gap-2 rounded-xl border-white/10 bg-white/[0.03]"
+          >
+            <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
+            {isRefreshing ? "Syncing..." : "Sync now"}
+          </Button>
+        }
+      />
 
       <Card className="border-white/10">
         <CardHeader className="gap-4 pb-3">
@@ -380,6 +452,31 @@ export default function DashboardActivityPage() {
               </Button>
             ))}
           </div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <label className="relative">
+              <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search ticker, company, broker, or order type..."
+                className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Sort</span>
+              {(Object.keys(activitySortLabels) as ActivitySortBy[]).map((value) => (
+                <Button
+                  key={value}
+                  size="sm"
+                  variant={sortBy === value ? "default" : "outline"}
+                  className={sortBy === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                  onClick={() => setSortBy(value)}
+                >
+                  {activitySortLabels[value]}
+                </Button>
+              ))}
+            </div>
+          </div>
         </CardHeader>
       </Card>
 
@@ -399,7 +496,7 @@ export default function DashboardActivityPage() {
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${summary.totalRealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {formatSignedMoney(summary.totalRealisedPlGbp)}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Profit/loss on sells closed in this period</p>
+          <p className="mt-1 text-xs text-muted-foreground">Broker realised P/L when available; otherwise FIFO estimate.</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Activity</p>
@@ -412,14 +509,19 @@ export default function DashboardActivityPage() {
         <Card className="border-dashed border-white/12 bg-white/[0.02]">
           <CardHeader>
             <CardTitle>No trading activity loaded</CardTitle>
-            <CardDescription>Connect a broker and refresh to see buys and sells here.</CardDescription>
+            <CardDescription>{noActivityReason}</CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="rounded-xl">
+              {isRefreshing ? "Syncing..." : "Sync now"}
+            </Button>
+          </CardContent>
         </Card>
       ) : periodActivity.length === 0 ? (
         <Card className="border-dashed border-white/12 bg-white/[0.02]">
           <CardHeader>
             <CardTitle>No trades in this period</CardTitle>
-            <CardDescription>Try a wider date range or refresh from your brokers.</CardDescription>
+            <CardDescription>{noActivityReason}</CardDescription>
           </CardHeader>
         </Card>
       ) : groupMode === "broker" ? (

@@ -3,8 +3,10 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useSearchParams } from "next/navigation"
-import { ArrowLeftRight, Brain, ChartCandlestick, LayoutDashboard, Landmark, Settings } from "lucide-react"
+import { ArrowLeftRight, Brain, ChartCandlestick, LayoutDashboard, Landmark, Menu, Settings } from "lucide-react"
 import { ThemeToggle } from "@/components/theme/theme-toggle"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 const navigationItems = [
@@ -15,6 +17,9 @@ const navigationItems = [
 	{ href: "/integrations", label: "Connections", shortLabel: "Brokers", icon: Landmark },
 	{ href: "/settings", label: "Settings", shortLabel: "Settings", icon: Settings },
 ]
+
+const mobilePrimaryItems = navigationItems.slice(0, 4)
+const mobileMoreItems = navigationItems.slice(4)
 
 function isNavigationItemActive(pathname: string, view: string | null, href: string) {
 	return href === "/dashboard"
@@ -84,7 +89,44 @@ export function MobileHeader() {
 				</Link>
 				<h2 className="truncate text-lg font-semibold tracking-tight">{currentItem.label}</h2>
 			</div>
-			<ThemeToggle compact />
+			<Dialog>
+				<DialogTrigger render={<Button variant="outline" size="icon-sm" className="shrink-0 rounded-xl border-white/10 bg-white/[0.03]" />}>
+					<Menu className="size-4" />
+					<span className="sr-only">Open menu</span>
+				</DialogTrigger>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Menu</DialogTitle>
+						<DialogDescription>More pages and display preferences.</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4">
+						<nav className="grid gap-2">
+							{mobileMoreItems.map((item) => {
+								const Icon = item.icon
+								const isActive = isNavigationItemActive(pathname, searchParams.get("view"), item.href)
+
+								return (
+									<Link
+										key={item.href}
+										href={item.href}
+										className={cn(
+											"flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-sm font-medium text-muted-foreground",
+											isActive && "text-foreground"
+										)}
+									>
+										<Icon className="size-4" />
+										{item.label}
+									</Link>
+								)
+							})}
+						</nav>
+						<div className="space-y-2">
+							<p className="text-xs font-medium text-muted-foreground">Theme</p>
+							<ThemeToggle />
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</header>
 	)
 }
@@ -96,8 +138,8 @@ export function MobileBottomNav() {
 
 	return (
 		<nav className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 md:hidden">
-			<div className="mx-auto grid max-w-xl grid-cols-6 gap-1 rounded-[1.75rem] border border-white/10 bg-background/88 p-2 shadow-[0_16px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl">
-				{navigationItems.map((item) => {
+			<div className="mx-auto grid max-w-md grid-cols-4 gap-1 rounded-[1.75rem] border border-white/10 bg-background/88 p-2 shadow-[0_16px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+				{mobilePrimaryItems.map((item) => {
 					const Icon = item.icon
 					const isActive = isNavigationItemActive(pathname, view, item.href)
 
