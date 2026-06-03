@@ -174,18 +174,20 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString()
+  const analysisDate = body?.analysisDate ?? now.slice(0, 10)
   const { data, error } = await (supabase.from("llm_analyses") as unknown as {
-    insert(values: unknown): {
+    upsert(values: unknown, options?: unknown): {
       select(columns: string): {
         single(): PromiseLike<{ data: LlmAnalysisRow | null; error: Error | null }>
       }
     }
-  }).insert({
+  }).upsert(
+    {
       user_id: userId,
       ticker,
       company_name: body?.companyName?.trim() ?? "",
       broker: body?.broker?.trim() || null,
-      analysis_date: body?.analysisDate ?? new Date().toISOString().slice(0, 10),
+      analysis_date: analysisDate,
       provider: body?.provider?.trim() || "ollama",
       model,
       recommendation: body?.recommendation?.trim() || "unknown",
@@ -196,7 +198,9 @@ export async function POST(request: Request) {
       prompt: body?.prompt?.trim() || null,
       raw_output: toSerializableJson(body?.rawOutput),
       updated_at: now,
-    })
+    },
+    { onConflict: "user_id,ticker,analysis_date,model" }
+  )
     .select("id, ticker, company_name, broker, analysis_date, provider, model, recommendation, confidence, horizon, thesis, risks, prompt, raw_output, created_at, updated_at")
     .single()
 
