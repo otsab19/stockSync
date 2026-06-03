@@ -115,6 +115,7 @@
   --sidebar-accent-foreground: oklch(0.972 0.01 255);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.74 0.09 170);
+  color-scheme: dark;
 }
 
 @layer base {
@@ -130,7 +131,7 @@
   }
   html {
     @apply font-sans;
-    color-scheme: dark;
+    color-scheme: light;
   }
   ::selection {
     background: color-mix(in oklch, var(--primary) 42%, transparent);

@@ -4,6 +4,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useSearchParams } from "next/navigation"
 import { ArrowLeftRight, Brain, ChartCandlestick, LayoutDashboard, Landmark, Settings } from "lucide-react"
+import { ThemeToggle } from "@/components/theme/theme-toggle"
 import { cn } from "@/lib/utils"
 
 const navigationItems = [
@@ -38,7 +39,7 @@ export function DesktopSidebar() {
 					<span className="text-lg font-bold tracking-tight">StockSync</span>
 				</Link>
 
-				<nav className="space-y-1.5">
+				<nav className="flex-1 space-y-1.5">
 					{navigationItems.map((item) => {
 						const Icon = item.icon
 						const isActive = isNavigationItemActive(pathname, view, item.href)
@@ -60,6 +61,11 @@ export function DesktopSidebar() {
 						)
 					})}
 				</nav>
+
+				<div className="space-y-2 border-t border-white/8 pt-4">
+					<p className="px-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Theme</p>
+					<ThemeToggle />
+				</div>
 			</div>
 		</aside>
 	)
@@ -71,11 +77,14 @@ export function MobileHeader() {
 	const currentItem = getCurrentNavigationItem(pathname, searchParams.get("view"))
 
 	return (
-		<header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/8 bg-background/88 px-4 py-3 backdrop-blur md:hidden">
-			<Link href="/dashboard">
-				<Image src="/icons/icon.svg" alt="StockSync" width={24} height={24} className="rounded-md" />
-			</Link>
-			<h2 className="truncate text-lg font-semibold tracking-tight">{currentItem.label}</h2>
+		<header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-white/8 bg-background/88 px-4 py-3 backdrop-blur md:hidden">
+			<div className="flex min-w-0 items-center gap-3">
+				<Link href="/dashboard">
+					<Image src="/icons/icon.svg" alt="StockSync" width={24} height={24} className="rounded-md" />
+				</Link>
+				<h2 className="truncate text-lg font-semibold tracking-tight">{currentItem.label}</h2>
+			</div>
+			<ThemeToggle compact />
 		</header>
 	)
 }
