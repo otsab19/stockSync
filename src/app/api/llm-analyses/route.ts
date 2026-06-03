@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/utils/supabase/server"
+import { createClient, createServiceRoleClient } from "@/utils/supabase/server"
 import type { Json } from "@/types/supabase"
 
 type LlmAnalysisRow = {
@@ -83,6 +83,35 @@ async function getAuthenticatedClient() {
   return { supabase, user }
 }
 
+async function getAnalysisInsertClient(request: Request) {
+  const ingestKey = request.headers.get("x-local-ingest-key")
+
+  if (ingestKey) {
+    const expectedKey = process.env.LLM_ANALYSIS_INGEST_KEY
+    const ingestUserId = process.env.LLM_ANALYSIS_INGEST_USER_ID
+
+    if (!expectedKey || !ingestUserId) {
+      return { error: NextResponse.json({ message: "Local LLM ingest is not configured." }, { status: 503 }) }
+    }
+
+    if (ingestKey !== expectedKey) {
+      return { error: NextResponse.json({ message: "Invalid local ingest key." }, { status: 401 }) }
+    }
+
+    const supabase = createServiceRoleClient()
+    if (!supabase) {
+      return { error: NextResponse.json({ message: "Supabase service role key is missing." }, { status: 503 }) }
+    }
+
+    return { supabase, userId: ingestUserId }
+  }
+
+  const auth = await getAuthenticatedClient()
+  if (auth.error) return { error: auth.error }
+
+  return { supabase: auth.supabase, userId: auth.user.id }
+}
+
 export async function GET() {
   const auth = await getAuthenticatedClient()
   if (auth.error) return auth.error
@@ -104,9 +133,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = await getAuthenticatedClient()
-  if (auth.error) return auth.error
-  const { supabase, user } = auth
+  const insertClient = await getAnalysisInsertClient(request)
+  if (insertClient.error) return insertClient.error
+  const { supabase, userId } = insertClient
 
   const body = await request.json().catch(() => null) as LlmAnalysisRequest | null
   const ticker = body?.ticker?.trim().toUpperCase()
@@ -132,7 +161,7 @@ export async function POST(request: Request) {
       }
     }
   }).insert({
-      user_id: user.id,
+      user_id: userId,
       ticker,
       company_name: body?.companyName?.trim() ?? "",
       broker: body?.broker?.trim() || null,
