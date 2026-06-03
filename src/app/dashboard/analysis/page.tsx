@@ -43,6 +43,21 @@ type AnalysisTarget = {
   updatedAt: string
 }
 
+type InstrumentSearchResult = {
+  broker: "t212" | "etoro"
+  id?: string
+  ticker: string
+  companyName?: string
+  company_name?: string
+  nativeCurrency?: "GBP" | "USD"
+  native_currency?: "GBP" | "USD"
+  assetType?: "stock" | "etf" | "crypto"
+  exchange?: string
+  livePrice?: number
+  live_price?: number
+  isQuoteAvailable?: boolean
+}
+
 type AnalysisResponse = {
   analyses?: LlmAnalysis[]
   message?: string
@@ -101,6 +116,29 @@ function matchesTickerSearch(searchTerm: string, values: Array<string | null | u
   return values.some((value) => value?.toLowerCase().includes(query))
 }
 
+function getInstrumentCompanyName(instrument: InstrumentSearchResult) {
+  return instrument.companyName ?? instrument.company_name ?? instrument.ticker
+}
+
+function getInstrumentPrice(instrument: InstrumentSearchResult) {
+  return instrument.livePrice ?? instrument.live_price ?? 0
+}
+
+function getInstrumentCurrency(instrument: InstrumentSearchResult) {
+  return instrument.nativeCurrency ?? instrument.native_currency ?? "GBP"
+}
+
+function formatInstrumentPrice(instrument: InstrumentSearchResult) {
+  const price = getInstrumentPrice(instrument)
+  if (!price) return "No live quote"
+
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: getInstrumentCurrency(instrument),
+    maximumFractionDigits: price >= 100 ? 2 : 4,
+  }).format(price)
+}
+
 function DetailBlock({ title, children }: { title: string; children: string | null }) {
   return (
     <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
@@ -119,10 +157,13 @@ export default function DashboardAnalysisPage() {
   const [isAddingTarget, setIsAddingTarget] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [expandedAnalysisId, setExpandedAnalysisId] = useState<string | null>(null)
+  const [tickerSearch, setTickerSearch] = useState("")
+  const [tickerSearchResults, setTickerSearchResults] = useState<InstrumentSearchResult[]>([])
   const [newTicker, setNewTicker] = useState("")
   const [newCompanyName, setNewCompanyName] = useState("")
   const [newBroker, setNewBroker] = useState("")
   const [newNotes, setNewNotes] = useState("")
+  const [isSearchingTickers, setIsSearchingTickers] = useState(false)
 
   const loadDashboard = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     try {
@@ -164,6 +205,52 @@ export default function DashboardAnalysisPage() {
     return () => { window.clearTimeout(timeoutId) }
   }, [loadDashboard])
 
+  useEffect(() => {
+    const query = tickerSearch.trim()
+
+    if (query.length < 2) {
+      const resetId = window.setTimeout(() => {
+        setTickerSearchResults([])
+        setIsSearchingTickers(false)
+      }, 0)
+      return () => window.clearTimeout(resetId)
+    }
+
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(async () => {
+      setIsSearchingTickers(true)
+      try {
+        const response = await fetch(`/api/instruments/search?q=${encodeURIComponent(query)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        const payload = await response.json() as { instruments?: InstrumentSearchResult[]; message?: string }
+        if (!response.ok) throw new Error(payload.message || "Failed to search stocks.")
+        setTickerSearchResults(payload.instruments ?? [])
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setMessage(error instanceof Error ? error.message : "Failed to search stocks.")
+          setTickerSearchResults([])
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsSearchingTickers(false)
+      }
+    }, 500)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeoutId)
+    }
+  }, [tickerSearch])
+
+  function selectInstrument(instrument: InstrumentSearchResult) {
+    setNewTicker(instrument.ticker.toUpperCase())
+    setNewCompanyName(getInstrumentCompanyName(instrument))
+    setNewBroker(instrument.broker)
+    setTickerSearch(`${instrument.ticker} ${getInstrumentCompanyName(instrument)}`)
+    setTickerSearchResults([])
+  }
+
   async function handleAddTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const ticker = newTicker.trim().toUpperCase()
@@ -201,6 +288,8 @@ export default function DashboardAnalysisPage() {
       setNewCompanyName("")
       setNewBroker("")
       setNewNotes("")
+      setTickerSearch("")
+      setTickerSearchResults([])
       setMessage(`${ticker} added to the AI analysis source table.`)
     } catch (error) {
       console.error("Failed to add analysis target:", error)
@@ -286,6 +375,55 @@ export default function DashboardAnalysisPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleAddTarget} className="space-y-3">
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Search holdings or broker instruments</span>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                  <input
+                    value={tickerSearch}
+                    onChange={(event) => setTickerSearch(event.target.value)}
+                    placeholder="Search ticker or company..."
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
+                  />
+                </div>
+                <span className="block text-xs text-muted-foreground">
+                  {isSearchingTickers ? "Searching eToro, Trading 212, and synced positions..." : "Pick a result below, or type ticker details manually."}
+                </span>
+              </label>
+
+              {tickerSearchResults.length > 0 ? (
+                <div className="max-h-72 space-y-2 overflow-auto rounded-2xl border border-white/8 bg-white/[0.025] p-2">
+                  {tickerSearchResults.map((instrument) => {
+                    const companyName = getInstrumentCompanyName(instrument)
+                    const key = `${instrument.broker}:${instrument.id ?? instrument.ticker}`
+
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => selectInstrument(instrument)}
+                        className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-white/[0.04]"
+                      >
+                        <span className="min-w-0">
+                          <span className="block font-medium">{instrument.ticker}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{companyName}</span>
+                        </span>
+                        <span className="flex shrink-0 flex-col items-end gap-1">
+                          <Badge variant="outline" className="border-white/10 bg-white/[0.03] text-muted-foreground">
+                            {instrument.broker}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">{formatInstrumentPrice(instrument)}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : tickerSearch.trim().length >= 2 && !isSearchingTickers ? (
+                <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-3 text-xs text-muted-foreground">
+                  No matching synced positions or broker instruments found. You can still enter a ticker manually.
+                </div>
+              ) : null}
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5">
                   <span className="text-xs font-medium text-muted-foreground">Ticker</span>
