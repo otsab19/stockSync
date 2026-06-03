@@ -182,6 +182,7 @@ Applied via Supabase CLI migrations:
 - `positions` — persisted portfolio positions
 - `activity_events` — persisted trade history
 - `llm_analyses` — locally generated LLM/Ollama stock analysis results
+- `llm_analysis_targets` — tickers queued as source input for local LLM analysis workers
 
 ## Development
 

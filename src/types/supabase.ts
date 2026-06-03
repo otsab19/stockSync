@@ -231,6 +231,47 @@ export interface Database {
           updated_at?: string
         }
       }
+      llm_analysis_targets: {
+        Row: {
+          id: string
+          user_id: string
+          ticker: string
+          company_name: string
+          broker: string
+          status: 'pending' | 'running' | 'analyzed' | 'paused'
+          priority: number
+          notes: string | null
+          last_analyzed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          ticker: string
+          company_name?: string
+          broker?: string
+          status?: 'pending' | 'running' | 'analyzed' | 'paused'
+          priority?: number
+          notes?: string | null
+          last_analyzed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          ticker?: string
+          company_name?: string
+          broker?: string
+          status?: 'pending' | 'running' | 'analyzed' | 'paused'
+          priority?: number
+          notes?: string | null
+          last_analyzed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
   }
 }

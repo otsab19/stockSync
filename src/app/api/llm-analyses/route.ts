@@ -69,6 +69,26 @@ function mapAnalysisRow(row: LlmAnalysisRow) {
   }
 }
 
+async function markAnalysisTargetAnalyzed(
+  supabase: { from(table: string): unknown },
+  userId: string,
+  ticker: string,
+  analyzedAt: string
+) {
+  const targetTable = supabase.from("llm_analysis_targets") as {
+    update(values: unknown): {
+      eq(column: string, value: unknown): {
+        eq(column: string, value: unknown): PromiseLike<{ error: Error | null }>
+      }
+    }
+  }
+
+  await targetTable
+    .update({ status: "analyzed", last_analyzed_at: analyzedAt, updated_at: analyzedAt })
+    .eq("user_id", userId)
+    .eq("ticker", ticker)
+}
+
 async function getAuthenticatedClient() {
   const supabase = await createClient()
   if (!supabase) {
@@ -183,6 +203,8 @@ export async function POST(request: Request) {
   if (error || !data) {
     return NextResponse.json({ message: "Failed to save LLM analysis." }, { status: 500 })
   }
+
+  await markAnalysisTargetAnalyzed(supabase, userId, ticker, now)
 
   return NextResponse.json({ analysis: mapAnalysisRow(data) })
 }
