@@ -181,6 +181,7 @@ Applied via Supabase CLI migrations:
 - `sync_runs` — sync attempt history
 - `positions` — persisted portfolio positions
 - `activity_events` — persisted trade history
+- `llm_analyses` — locally generated LLM/Ollama stock analysis results
 
 ## Development
 

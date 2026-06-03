@@ -172,6 +172,65 @@ export interface Database {
           updated_at?: string
         }
       }
+      llm_analyses: {
+        Row: {
+          id: string
+          user_id: string
+          ticker: string
+          company_name: string
+          broker: string | null
+          analysis_date: string
+          provider: string
+          model: string
+          recommendation: string
+          confidence: number | null
+          horizon: string | null
+          thesis: string | null
+          risks: string | null
+          prompt: string | null
+          raw_output: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          ticker: string
+          company_name?: string
+          broker?: string | null
+          analysis_date?: string
+          provider?: string
+          model: string
+          recommendation?: string
+          confidence?: number | null
+          horizon?: string | null
+          thesis?: string | null
+          risks?: string | null
+          prompt?: string | null
+          raw_output?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          ticker?: string
+          company_name?: string
+          broker?: string | null
+          analysis_date?: string
+          provider?: string
+          model?: string
+          recommendation?: string
+          confidence?: number | null
+          horizon?: string | null
+          thesis?: string | null
+          risks?: string | null
+          prompt?: string | null
+          raw_output?: Json
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
   }
 }
