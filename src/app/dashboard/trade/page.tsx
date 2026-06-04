@@ -14,6 +14,10 @@ type PreviewResponse = {
   canSubmit: boolean
 }
 
+function getBrokerLabel(broker: BrokerInstrument["broker"]) {
+  return broker === "t212" ? "Trading 212" : "eToro"
+}
+
 function createIdempotencyKey() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
 }
@@ -54,7 +58,7 @@ export default function TradePage() {
     if (!selectedInstrument) return null
 
     return {
-      broker: form.broker,
+      broker: selectedInstrument.broker,
       instrumentId: selectedInstrument.id,
       ticker: selectedInstrument.ticker,
       companyName: selectedInstrument.companyName,
@@ -104,6 +108,11 @@ export default function TradePage() {
       const data = await response.json() as { instruments?: BrokerInstrument[]; message?: string }
       if (!response.ok) throw new Error(data.message ?? "Instrument search failed.")
       setInstruments(data.instruments ?? [])
+      if ((data.instruments ?? []).length === 0) {
+        setSelectedInstrument(null)
+        setPreview(null)
+        setConfirmation("")
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Instrument search failed.")
     } finally {
@@ -116,6 +125,16 @@ export default function TradePage() {
     setPreview(null)
     setConfirmation("")
     setIdempotencyKey(createIdempotencyKey())
+  }
+
+  const selectInstrument = (instrument: BrokerInstrument) => {
+    setSelectedInstrument(instrument)
+    setForm((current) => ({ ...current, broker: instrument.broker }))
+    setQuery(instrument.ticker)
+    setPreview(null)
+    setConfirmation("")
+    setIdempotencyKey(createIdempotencyKey())
+    setMessage(null)
   }
 
   const previewOrder = async () => {
@@ -192,11 +211,21 @@ export default function TradePage() {
         <Card>
           <CardHeader>
             <CardTitle>Build order</CardTitle>
-            <CardDescription>Search the broker instrument first, then enter the order details.</CardDescription>
+            <CardDescription>Search ticker from the API first. The selected result fills ticker, broker, and instrument id for the order.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-              <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void searchInstruments()} placeholder="Search ticker, e.g. AAPL" className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              <input
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  setPreview(null)
+                  setConfirmation("")
+                }}
+                onKeyDown={(event) => event.key === "Enter" && void searchInstruments()}
+                placeholder="Search ticker, e.g. AAPL"
+                className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-primary/50"
+              />
               <Button onClick={() => void searchInstruments()} disabled={isSearching || query.trim().length < 2}>
                 {isSearching ? <RefreshCw className="size-4 animate-spin" /> : <Search className="size-4" />}
                 Search
@@ -209,26 +238,46 @@ export default function TradePage() {
                   <button
                     key={`${instrument.broker}:${instrument.id}`}
                     type="button"
-                    onClick={() => {
-                      setSelectedInstrument(instrument)
-                      updateForm("broker", instrument.broker)
-                    }}
-                    className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-left text-sm transition hover:border-primary/40"
+                    onClick={() => selectInstrument(instrument)}
+                    className={`rounded-2xl border px-4 py-3 text-left text-sm transition hover:border-primary/40 ${
+                      selectedInstrument?.broker === instrument.broker && selectedInstrument.id === instrument.id
+                        ? "border-primary/50 bg-primary/10"
+                        : "border-white/8 bg-white/[0.03]"
+                    }`}
                   >
                     <span className="font-semibold">{instrument.ticker}</span>
                     <span className="ml-2 text-muted-foreground">{instrument.companyName}</span>
-                    <Badge className="ml-3" variant="outline">{instrument.broker}</Badge>
+                    <Badge className="ml-3" variant="outline">{getBrokerLabel(instrument.broker)}</Badge>
+                    <span className="ml-2 text-xs text-muted-foreground">{instrument.id}</span>
                   </button>
                 ))}
               </div>
             ) : null}
 
+            {selectedInstrument ? (
+              <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 text-sm">
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Selected API result</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <strong>{selectedInstrument.ticker}</strong>
+                  <span className="text-muted-foreground">{selectedInstrument.companyName}</span>
+                  <Badge variant="secondary">{getBrokerLabel(selectedInstrument.broker)}</Badge>
+                  <Badge variant="outline">ID: {selectedInstrument.id}</Badge>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">This selected instrument is what fills the order request. Search and select another result to trade a different ticker or broker.</p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-muted-foreground">
+                No ticker selected yet. Search and choose a result before previewing an order.
+              </div>
+            )}
+
             <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Broker
-                <select value={form.broker} onChange={(event) => updateForm("broker", event.target.value as typeof form.broker)} className="w-full rounded-xl border border-white/10 bg-background px-3 py-2 text-sm text-foreground">
-                  <option value="t212">Trading 212</option>
-                  <option value="etoro">eToro</option>
-                </select>
+                <input
+                  value={selectedInstrument ? getBrokerLabel(selectedInstrument.broker) : "Select ticker from search"}
+                  readOnly
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground"
+                />
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Side
                 <select value={form.side} onChange={(event) => updateForm("side", event.target.value as typeof form.side)} className="w-full rounded-xl border border-white/10 bg-background px-3 py-2 text-sm text-foreground">
