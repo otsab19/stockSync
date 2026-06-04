@@ -69,9 +69,14 @@ VAPID_PRIVATE_KEY=                     # required for push notifications
 ETORO_API_BASE_URL=                    # defaults to https://public-api.etoro.com
 ETORO_ACCOUNT_MODE=                    # "real" (default) or "demo"
 ETORO_PORTFOLIO_PATHS=                 # comma-separated custom paths
+ETORO_ORDER_PATH=                      # defaults to /api/v1/trading/orders
 
 # Trading 212 API configuration (optional override)
 TRADING212_API_BASE_URL=               # defaults to https://live.trading212.com/api/v0
+
+# Live trading controls
+ENABLE_LIVE_TRADING=false              # must be true before /api/orders/submit places broker orders
+MAX_ORDER_NOTIONAL_GBP=1000            # max estimated per-order notional before submit is blocked
 ```
 
 Broker API keys are stored per-user (in `api_secrets` table for Supabase mode, or browser IndexedDB for browser mode). **Never put real broker keys in `.env.local` or committed files.**
@@ -85,12 +90,15 @@ src/
       credentials/route.ts       — save/retrieve broker API keys
       cron/check-alerts/         — scheduled alert processing
       integrations/sync-from-api/ — broker API sync endpoint
+      instruments/search/        — authenticated broker ticker/instrument search
+      orders/                    — live order preview, submit, list, cancel routes
       portfolio/route.ts         — portfolio data endpoint
       push/                      — push subscription management
       sync/                      — sync status endpoint
     auth/callback/               — OAuth callback
     dashboard/
       page.tsx                   — main portfolio dashboard
+      trade/page.tsx             — live trading ticket and order history
       history/page.tsx           — trade history page
     integrations/page.tsx        — broker connection & CSV import UI
     login/page.tsx               — login page
@@ -136,6 +144,7 @@ supabase/
 | `/` | Landing page |
 | `/login` | Sign-in page |
 | `/dashboard` | Portfolio dashboard with KPIs, charts, and positions table |
+| `/dashboard/trade` | Live trade ticket with broker instrument search, preview, confirmation, and order history |
 | `/dashboard/history` | Trade history / activity events |
 | `/integrations` | Broker connections, API sync, and CSV import |
 | `/settings` | Setup checklist and configuration |
@@ -146,6 +155,11 @@ supabase/
 |-------|-------------|
 | `GET /api/portfolio` | Portfolio data (server mode) or `client_only` (browser mode) |
 | `POST /api/integrations/sync-from-api` | Trigger live broker API sync |
+| `GET /api/instruments/search?q=AAPL` | Search Trading 212/eToro instruments using saved broker credentials |
+| `GET /api/orders` | List the latest audited live order attempts |
+| `POST /api/orders/preview` | Validate a trade ticket and return warnings/confirmation phrase without placing an order |
+| `POST /api/orders/submit` | Submit a confirmed live broker order; requires `ENABLE_LIVE_TRADING=true` |
+| `POST /api/orders/cancel` | Cancel an order where the broker provider supports cancellation |
 | `GET /api/sync/status` | Broker connection and sync-run status |
 | `GET/POST /api/credentials` | Save/retrieve encrypted broker API keys |
 | `GET /api/cron/check-alerts` | Scheduled alert evaluation (requires `CRON_SECRET`) |
@@ -156,18 +170,44 @@ supabase/
 ### Trading 212
 
 - **Live API sync**: fetches current positions and full order history (all pages, rate-limited at 6 req/min)
+- **Live trading**: supports market, limit, stop, and stop-limit equity orders when `ENABLE_LIVE_TRADING=true`
 - **CSV import**: parses Trading 212 transaction export files
 - Ticker cleaning: strips `_US_EQ`, `_EQ`, `_GB_EQ`, `p_EQ` suffixes
 - Wallet impact: uses `walletImpact.netValue` for GBP gross amounts when available
+- Base URL: `https://live.trading212.com/api/v0` unless `TRADING212_API_BASE_URL` is set
+- Auth used by this app: `Authorization: Basic base64(apiKey:apiSecret)`
+- External endpoints used:
+  - `GET /equity/positions` — portfolio positions
+  - `GET /equity/history/orders?limit=50` plus broker `nextPagePath` — trade/order history
+  - `GET /equity/metadata/instruments` — instrument search source
+  - `POST /equity/orders/market` — market order
+  - `POST /equity/orders/limit` — limit order
+  - `POST /equity/orders/stop` — stop order
+  - `POST /equity/orders/stop_limit` — stop-limit order
 
 ### eToro
 
 - **Live API sync**: fetches portfolio positions and up to 5 years of trade history
+- **Live trading**: supports market-style and limit/rate orders with optional stop-loss/take-profit fields when `ENABLE_LIVE_TRADING=true`
 - **CSV import**: parses eToro account statement CSVs
 - Instrument enrichment: fetches metadata and live rates for all instruments
 - Ticker cleaning: strips LSE suffixes (`.L`, `.LON`), trailing lowercase `l`, applies rename aliases
 - GBX detection: identifies pence-priced instruments via exchange info, currency codes, and live rate magnitude (>200)
 - Leveraged positions: correctly accounts for leverage in share/amount calculations
+- Base URL: `https://public-api.etoro.com` unless `ETORO_API_BASE_URL` is set
+- Auth used by this app: `x-api-key`, `x-user-key`, and `x-request-id`
+- External endpoints used:
+  - `GET /api/v1/trading/info/portfolio` — real-account portfolio positions
+  - `GET /api/v1/trading/info/real/pnl` — real-account P/L enrichment
+  - `GET /api/v1/trading/info/demo/portfolio` — demo portfolio when `ETORO_ACCOUNT_MODE=demo`
+  - `GET /api/v1/trading/info/demo/pnl` — demo P/L when `ETORO_ACCOUNT_MODE=demo`
+  - `GET /api/v1/trading/info/real/history?minDate=<date>&page=<n>&pageSize=500&includeNames=<bool>` — real trade history
+  - `GET /api/v1/trading/info/trade/history?minDate=<date>&page=<n>&pageSize=500&includeNames=<bool>` — legacy trade history fallback
+  - `GET /api/v1/trading/info/demo/history?minDate=<date>&page=<n>&pageSize=500&includeNames=<bool>` — demo trade history
+  - `GET /api/v1/market-data/search?internalSymbolFull=<ticker>` — instrument search
+  - `GET /api/v1/market-data/instruments?instrumentIds=<ids>` — instrument metadata
+  - `GET /api/v1/market-data/instruments/rates?instrumentIds=<ids>` — live rates/quotes
+  - `POST /api/v1/trading/orders` — live order submission, unless `ETORO_ORDER_PATH` overrides it
 
 ## Database schema
 
@@ -183,6 +223,7 @@ Applied via Supabase CLI migrations:
 - `activity_events` — persisted trade history
 - `llm_analyses` — locally generated LLM/Ollama stock analysis results
 - `llm_analysis_targets` — tickers queued as source input for local LLM analysis workers
+- `order_requests` — audited live trade order attempts with idempotency key, broker result, and status
 
 ## Development
 
