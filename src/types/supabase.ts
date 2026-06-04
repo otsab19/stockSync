@@ -272,6 +272,92 @@ export interface Database {
           updated_at?: string
         }
       }
+      order_requests: {
+        Row: {
+          id: string
+          user_id: string
+          broker: 't212' | 'etoro'
+          instrument_id: string
+          ticker: string
+          company_name: string
+          side: 'buy' | 'sell'
+          order_type: 'market' | 'limit' | 'stop' | 'stop_limit'
+          input_mode: 'quantity' | 'value'
+          quantity: number | null
+          value: number | null
+          limit_price: number | null
+          stop_price: number | null
+          stop_loss_price: number | null
+          take_profit_price: number | null
+          time_validity: 'DAY' | 'GOOD_TILL_CANCEL' | null
+          leverage: number
+          status: 'draft' | 'pending_confirmation' | 'submitted' | 'accepted' | 'rejected' | 'failed' | 'cancelled'
+          idempotency_key: string
+          broker_order_id: string | null
+          raw_request: Json
+          raw_response: Json | null
+          error_message: string | null
+          created_at: string
+          updated_at: string
+          submitted_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          broker: 't212' | 'etoro'
+          instrument_id: string
+          ticker: string
+          company_name?: string
+          side: 'buy' | 'sell'
+          order_type: 'market' | 'limit' | 'stop' | 'stop_limit'
+          input_mode: 'quantity' | 'value'
+          quantity?: number | null
+          value?: number | null
+          limit_price?: number | null
+          stop_price?: number | null
+          stop_loss_price?: number | null
+          take_profit_price?: number | null
+          time_validity?: 'DAY' | 'GOOD_TILL_CANCEL' | null
+          leverage?: number
+          status?: 'draft' | 'pending_confirmation' | 'submitted' | 'accepted' | 'rejected' | 'failed' | 'cancelled'
+          idempotency_key: string
+          broker_order_id?: string | null
+          raw_request?: Json
+          raw_response?: Json | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+          submitted_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          broker?: 't212' | 'etoro'
+          instrument_id?: string
+          ticker?: string
+          company_name?: string
+          side?: 'buy' | 'sell'
+          order_type?: 'market' | 'limit' | 'stop' | 'stop_limit'
+          input_mode?: 'quantity' | 'value'
+          quantity?: number | null
+          value?: number | null
+          limit_price?: number | null
+          stop_price?: number | null
+          stop_loss_price?: number | null
+          take_profit_price?: number | null
+          time_validity?: 'DAY' | 'GOOD_TILL_CANCEL' | null
+          leverage?: number
+          status?: 'draft' | 'pending_confirmation' | 'submitted' | 'accepted' | 'rejected' | 'failed' | 'cancelled'
+          idempotency_key?: string
+          broker_order_id?: string | null
+          raw_request?: Json
+          raw_response?: Json | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+          submitted_at?: string | null
+        }
+      }
     }
   }
 }

@@ -1,5 +1,6 @@
 import type { PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 import type { BrokerApiCredentials } from "@/types/integrations"
+import type { BrokerOrderResult, OrderCapability, OrderPreview, TradeOrderRequest } from "@/types/orders"
 
 export type BrokerInstrument = {
   broker: "t212" | "etoro"
@@ -37,6 +38,10 @@ export interface BrokerProvider {
   getSyncData?(credentials?: string | BrokerApiCredentials): Promise<BrokerSyncResult>
   searchInstruments?(query: string, credentials?: string | BrokerApiCredentials): Promise<BrokerInstrument[]>
   getInstrumentQuote?(instrument: BrokerInstrument, credentials?: string | BrokerApiCredentials): Promise<BrokerInstrumentQuote | null>
+  getOrderCapabilities?(): OrderCapability
+  previewOrder?(order: TradeOrderRequest, credentials?: string | BrokerApiCredentials): Promise<OrderPreview>
+  placeOrder?(order: TradeOrderRequest, credentials?: string | BrokerApiCredentials): Promise<BrokerOrderResult>
+  cancelOrder?(brokerOrderId: string, credentials?: string | BrokerApiCredentials): Promise<BrokerOrderResult>
   importFromCsv?(csvText: string): Promise<PortfolioPosition[]>
 }
 

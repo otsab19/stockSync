@@ -1,6 +1,13 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importTrading212PortfolioFromCsv } from "@/lib/integrations/trading212-csv"
-import { fetchTrading212ActivityFromApi, fetchTrading212PortfolioFromApi, searchTrading212InstrumentsFromApi } from "@/lib/integrations/trading212-live"
+import {
+  fetchTrading212ActivityFromApi,
+  fetchTrading212PortfolioFromApi,
+  getTrading212OrderCapabilities,
+  placeTrading212Order,
+  previewTrading212Order,
+  searchTrading212InstrumentsFromApi,
+} from "@/lib/integrations/trading212-live"
 import { getTrading212SamplePortfolio } from "@/lib/portfolio/sample-portfolio"
 
 function isTrading212RateLimitError(error: unknown) {
@@ -48,6 +55,15 @@ export const trading212Provider: BrokerProvider = {
   },
   async searchInstruments(query, credentials) {
     return searchTrading212InstrumentsFromApi(query, credentials)
+  },
+  getOrderCapabilities() {
+    return getTrading212OrderCapabilities()
+  },
+  async previewOrder(order) {
+    return previewTrading212Order(order)
+  },
+  async placeOrder(order, credentials) {
+    return placeTrading212Order(order, credentials)
   },
   async importFromCsv(csvText: string) {
     return importTrading212PortfolioFromCsv(csvText)

@@ -1,8 +1,11 @@
 import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
+import { buildOrderPreview } from "@/lib/orders/validation"
 import type { BrokerInstrument } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
+import type { BrokerOrderResult, OrderCapability, TradeOrderRequest } from "@/types/orders"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
+import type { Json } from "@/types/supabase"
 
 const DEFAULT_TRADING212_API_BASE_URL = "https://live.trading212.com/api/v0"
 const DEFAULT_TRADING212_HISTORY_PATH = "/equity/history/orders?limit=50"
@@ -25,6 +28,7 @@ type Trading212HistoryResponse = {
 }
 
 type Trading212InstrumentResponse = Trading212ApiRow[]
+type Trading212OrderPayload = Record<string, string | number>
 
 function getNestedValue(row: Trading212ApiRow, path: string) {
   return path
@@ -291,6 +295,97 @@ async function fetchTrading212Json<T>(path: string, apiKey: string, apiSecret: s
   }
 
   return await response.json() as T
+}
+
+async function postTrading212Json<T>(path: string, apiKey: string, apiSecret: string, body: unknown): Promise<T> {
+  const normalizedPath = normalizeTrading212Path(path)
+  const requestUrl = /^https?:\/\//i.test(normalizedPath)
+    ? normalizedPath
+    : `${formatTrading212BaseUrl()}${normalizedPath}`
+
+  const response = await fetch(requestUrl, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: formatTrading212AuthHeader(apiKey, apiSecret),
+    },
+    body: JSON.stringify(body),
+  })
+
+  const responseText = await response.text()
+  const parsedBody = responseText.trim() ? JSON.parse(responseText) as T : ({} as T)
+
+  if (!response.ok) {
+    const detail = responseText.trim()
+      ? ` Trading 212 responded with ${response.status}: ${responseText.trim().slice(0, 240)}`
+      : ` Trading 212 responded with ${response.status}.`
+
+    throw new Error(`Failed to place Trading 212 order.${detail}`)
+  }
+
+  return parsedBody
+}
+
+export function getTrading212OrderCapabilities(): OrderCapability {
+  return {
+    broker: "t212",
+    supportedOrderTypes: ["market", "limit", "stop", "stop_limit"],
+    supportsValueOrders: false,
+    supportsStopLoss: false,
+    supportsTakeProfit: false,
+    supportsCancel: false,
+  }
+}
+
+export function buildTrading212OrderPayload(order: TradeOrderRequest) {
+  const ticker = order.instrumentId.trim() || order.ticker.trim()
+  const signedQuantity = (order.quantity ?? 0) * (order.side === "buy" ? 1 : -1)
+  const payload: Trading212OrderPayload = {
+    ticker,
+    quantity: signedQuantity,
+  }
+
+  if (order.orderType === "limit" || order.orderType === "stop_limit") {
+    payload.limitPrice = order.limitPrice ?? 0
+  }
+  if (order.orderType === "stop" || order.orderType === "stop_limit") {
+    payload.stopPrice = order.stopPrice ?? 0
+  }
+  if (order.timeValidity) {
+    payload.timeValidity = order.timeValidity
+  }
+
+  const endpointByType: Record<TradeOrderRequest["orderType"], string> = {
+    market: "/equity/orders/market",
+    limit: "/equity/orders/limit",
+    stop: "/equity/orders/stop",
+    stop_limit: "/equity/orders/stop_limit",
+  }
+
+  return {
+    endpoint: endpointByType[order.orderType],
+    payload,
+  }
+}
+
+export async function previewTrading212Order(order: TradeOrderRequest) {
+  return buildOrderPreview(order)
+}
+
+export async function placeTrading212Order(order: TradeOrderRequest, credentials?: string | BrokerApiCredentials): Promise<BrokerOrderResult> {
+  const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
+  const { endpoint, payload } = buildTrading212OrderPayload(order)
+  const rawResponse = await postTrading212Json<Trading212ApiRow>(endpoint, apiKey, apiSecret, payload)
+  const brokerOrderId = getStringValue(rawResponse, ["orderId", "id", "requestId"]) ?? null
+  const jsonResponse = JSON.parse(JSON.stringify(rawResponse)) as Json
+
+  return {
+    brokerOrderId,
+    status: "submitted",
+    rawResponse: jsonResponse,
+  }
 }
 
 function normalizeTrading212ActivityType(row: Trading212ApiRow, quantity: number) {

@@ -1,8 +1,11 @@
 import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
+import { buildOrderPreview } from "@/lib/orders/validation"
 import type { BrokerInstrument, BrokerInstrumentQuote } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
+import type { BrokerOrderResult, OrderCapability, TradeOrderRequest } from "@/types/orders"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
+import type { Json } from "@/types/supabase"
 
 const DEFAULT_ETORO_API_BASE_URL = "https://public-api.etoro.com"
 const DEFAULT_ETORO_REAL_PORTFOLIO_PATH = "/api/v1/trading/info/portfolio"
@@ -12,6 +15,7 @@ const DEFAULT_ETORO_DEMO_PNL_PATH = "/api/v1/trading/info/demo/pnl"
 const DEFAULT_ETORO_REAL_TRADE_HISTORY_PATH = "/api/v1/trading/info/real/history"
 const LEGACY_ETORO_TRADE_HISTORY_PATH = "/api/v1/trading/info/trade/history"
 const DEFAULT_ETORO_DEMO_TRADE_HISTORY_PATH = "/api/v1/trading/info/demo/history"
+const DEFAULT_ETORO_REAL_ORDER_PATH = "/api/v1/trading/orders"
 const USD_TO_GBP_FALLBACK_RATE = 0.79
 
 /**
@@ -1325,23 +1329,107 @@ function getEtoroPortfolioPaths() {
   return [DEFAULT_ETORO_REAL_PORTFOLIO_PATH, DEFAULT_ETORO_REAL_PNL_PATH]
 }
 
-function buildEtoroHeaders(apiKey: string, apiSecret: string) {
+function buildEtoroHeaders(apiKey: string, apiSecret: string, requestId = crypto.randomUUID()) {
   return {
     Accept: "application/json",
-    "x-request-id": crypto.randomUUID(),
+    "x-request-id": requestId,
     "x-api-key": apiKey,
     "x-user-key": apiSecret,
   }
 }
 
-function mapEtoroRowsToPositions(
-  rows: EtoroApiRow[],
-  metadataByInstrumentId: Map<number, EtoroInstrumentMetadata> = new Map(),
-  ratesByInstrumentId: Map<number, EtoroRateSnapshot> = new Map()
-) {
-  return rows
-    .map((row) => mapEtoroRowToPosition(row, metadataByInstrumentId, ratesByInstrumentId))
-    .filter((position): position is PortfolioPosition => Boolean(position))
+async function postEtoroJson<T>(baseUrl: string, path: string, headers: ReturnType<typeof buildEtoroHeaders>, body: unknown): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  })
+
+  const responseText = await response.text()
+  const parsedBody = responseText.trim() ? JSON.parse(responseText) as T : ({} as T)
+
+  if (!response.ok) {
+    const detail = responseText.trim()
+      ? ` eToro responded with ${response.status}: ${responseText.trim().slice(0, 240)}`
+      : ` eToro responded with ${response.status}.`
+
+    throw new Error(`Failed to place eToro order.${detail}`)
+  }
+
+  return parsedBody
+}
+
+export function getEtoroOrderCapabilities(): OrderCapability {
+  return {
+    broker: "etoro",
+    supportedOrderTypes: ["market", "limit"],
+    supportsValueOrders: true,
+    supportsStopLoss: true,
+    supportsTakeProfit: true,
+    supportsCancel: false,
+  }
+}
+
+export function buildEtoroOrderPayload(order: TradeOrderRequest) {
+  const instrumentId = Number(order.instrumentId)
+  const payload: Record<string, string | number | boolean> = {
+    InstrumentID: Number.isFinite(instrumentId) ? instrumentId : order.instrumentId,
+    IsBuy: order.side === "buy",
+    Leverage: order.leverage ?? 1,
+  }
+
+  if (order.inputMode === "value") {
+    payload.Amount = order.value ?? 0
+  } else {
+    payload.AmountInUnits = order.quantity ?? 0
+  }
+
+  if (order.orderType === "limit" || order.orderType === "stop_limit") {
+    payload.Rate = order.limitPrice ?? 0
+  }
+  if (order.stopLossPrice) {
+    payload.StopLossRate = order.stopLossPrice
+    payload.IsNoStopLoss = false
+  } else {
+    payload.IsNoStopLoss = true
+  }
+  if (order.takeProfitPrice) {
+    payload.TakeProfitRate = order.takeProfitPrice
+    payload.IsNoTakeProfit = false
+  } else {
+    payload.IsNoTakeProfit = true
+  }
+
+  return payload
+}
+
+export async function previewEtoroOrder(order: TradeOrderRequest, credentials?: string | BrokerApiCredentials) {
+  const instrumentId = Number(order.instrumentId)
+  const quote = Number.isFinite(instrumentId)
+    ? await fetchEtoroInstrumentQuoteFromApi({ broker: "etoro", id: order.instrumentId, ticker: order.ticker, companyName: order.companyName ?? order.ticker, nativeCurrency: "USD", assetType: "stock", isQuoteAvailable: true }, credentials).catch(() => null)
+    : null
+
+  return buildOrderPreview(order, quote)
+}
+
+export async function placeEtoroOrder(order: TradeOrderRequest, credentials?: string | BrokerApiCredentials): Promise<BrokerOrderResult> {
+  const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
+  const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
+  const path = process.env.ETORO_ORDER_PATH?.trim() || DEFAULT_ETORO_REAL_ORDER_PATH
+  const headers = buildEtoroHeaders(apiKey, apiSecret, order.idempotencyKey)
+  const rawResponse = await postEtoroJson<EtoroApiRow>(baseUrl, path, headers, buildEtoroOrderPayload(order))
+  const brokerOrderId = getStringValue(rawResponse, ["OrderID", "orderId", "PositionID", "positionId", "id"]) ?? null
+  const jsonResponse = JSON.parse(JSON.stringify(rawResponse)) as Json
+
+  return {
+    brokerOrderId,
+    status: "submitted",
+    rawResponse: jsonResponse,
+  }
 }
 
 function getEtoroOpenPositionTimestamp(row: EtoroApiRow) {
@@ -1620,7 +1708,7 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
   const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
   const headers = buildEtoroHeaders(apiKey, apiSecret)
   const attemptedResponses: string[] = []
-  let historyRows: EtoroTradeHistoryRow[] = []
+  const historyRows: EtoroTradeHistoryRow[] = []
   const historyRowKeys = new Set<string>()
   const loadedHistoryPaths: string[] = []
 

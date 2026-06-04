@@ -1,6 +1,14 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importEtoroPortfolioFromCsv } from "@/lib/integrations/etoro-csv"
-import { fetchEtoroInstrumentQuoteFromApi, fetchEtoroPortfolioFromApi, fetchEtoroSyncDataFromApi, searchEtoroInstrumentsFromApi } from "@/lib/integrations/etoro-live"
+import {
+  fetchEtoroInstrumentQuoteFromApi,
+  fetchEtoroPortfolioFromApi,
+  fetchEtoroSyncDataFromApi,
+  getEtoroOrderCapabilities,
+  placeEtoroOrder,
+  previewEtoroOrder,
+  searchEtoroInstrumentsFromApi,
+} from "@/lib/integrations/etoro-live"
 import { getEtoroSamplePortfolio } from "@/lib/portfolio/sample-portfolio"
 
 export const etoroProvider: BrokerProvider = {
@@ -39,6 +47,15 @@ export const etoroProvider: BrokerProvider = {
   },
   async getInstrumentQuote(instrument, credentials) {
     return fetchEtoroInstrumentQuoteFromApi(instrument, credentials)
+  },
+  getOrderCapabilities() {
+    return getEtoroOrderCapabilities()
+  },
+  async previewOrder(order, credentials) {
+    return previewEtoroOrder(order, credentials)
+  },
+  async placeOrder(order, credentials) {
+    return placeEtoroOrder(order, credentials)
   },
   async importFromCsv(csvText: string) {
     return importEtoroPortfolioFromCsv(csvText)
