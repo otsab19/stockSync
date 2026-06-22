@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   buildPlPeriodSeries,
   getActivitySide,
@@ -54,7 +53,7 @@ function formatChartTick(label: string, groupBy: PlGroupBy) {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date)
 }
 
-function PeriodTransactionsTable({
+function PeriodTransactionList({
   events,
   sellPlLookup,
 }: {
@@ -66,48 +65,51 @@ function PeriodTransactionsTable({
   }
 
   return (
-    <div className="max-h-[50vh] overflow-auto rounded-xl border border-white/8">
-      <Table>
-        <TableHeader className="sticky top-0 z-10 bg-card">
-          <TableRow>
-            <TableHead>Time</TableHead>
-            <TableHead>Side</TableHead>
-            <TableHead>Ticker</TableHead>
-            <TableHead>Broker</TableHead>
-            <TableHead className="text-right">Shares</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead className="text-right">P/L</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {events.map((event) => {
-            const side = getActivitySide(event)
-            const plGbp = side === "sell" ? getSellPlGbp(event, sellPlLookup) : null
+    <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02]">
+      <div className="overflow-x-auto">
+        <div className="min-w-[52rem]">
+          <div className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(4rem,0.6fr)_minmax(6rem,0.8fr)_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] gap-3 border-b border-white/8 bg-card/95 px-4 py-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <span>Time</span>
+            <span>Side</span>
+            <span>Ticker</span>
+            <span>Broker</span>
+            <span className="text-right">Shares</span>
+            <span className="text-right">Amount</span>
+            <span className="text-right">P/L</span>
+          </div>
+          <div className="max-h-[min(58vh,560px)] overflow-y-auto">
+            {events.map((event) => {
+              const side = getActivitySide(event)
+              const plGbp = side === "sell" ? getSellPlGbp(event, sellPlLookup) : null
 
-            return (
-              <TableRow key={event.id}>
-                <TableCell className="text-xs">{formatShortDateTime(event.timestamp)}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={side === "buy" ? "border-emerald-500/20 text-emerald-400" : "border-red-500/20 text-red-400"}>
+              return (
+                <div
+                  key={event.id}
+                  className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(4rem,0.6fr)_minmax(6rem,0.8fr)_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] items-center gap-3 border-b border-white/6 px-4 py-3 text-sm whitespace-nowrap last:border-b-0"
+                >
+                  <span className="truncate text-xs text-muted-foreground">{formatShortDateTime(event.timestamp)}</span>
+                  <span className={`text-xs font-semibold uppercase ${side === "buy" ? "text-emerald-400" : "text-red-400"}`}>
                     {side}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-xs font-medium">{event.ticker}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{event.brokerLabel}</TableCell>
-                <TableCell className="text-right text-xs tabular-nums">{formatTradeShares(event.shares)}</TableCell>
-                <TableCell className="text-right text-xs tabular-nums">{formatMoney(event.grossAmountGbp, "GBP")}</TableCell>
-                <TableCell className="text-right text-xs tabular-nums">
-                  {plGbp === null ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <span className={plGbp >= 0 ? "text-emerald-400" : "text-red-400"}>{formatSignedMoney(plGbp)}</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+                  </span>
+                  <span className="truncate text-sm font-semibold">{event.ticker}</span>
+                  <span className="truncate text-xs text-muted-foreground">{event.brokerLabel}</span>
+                  <span className="text-right text-xs tabular-nums">{formatTradeShares(event.shares)}</span>
+                  <span className="text-right text-xs tabular-nums">{formatMoney(event.grossAmountGbp, "GBP")}</span>
+                  <span className="text-right text-xs tabular-nums">
+                    {plGbp === null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <span className={plGbp >= 0 ? "font-medium text-emerald-400" : "font-medium text-red-400"}>
+                        {formatSignedMoney(plGbp)}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -236,22 +238,32 @@ export function ActivityPlChart({
       </Card>
 
       <Dialog open={selectedBucket !== null} onOpenChange={(open) => !open && setSelectedBucket(null)}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="flex max-h-[min(92vh,900px)] w-[min(96vw,76rem)] max-w-[96vw] flex-col gap-4 overflow-hidden p-5 sm:max-w-[76rem]">
           {selectedBucket ? (
             <>
               <DialogHeader>
                 <DialogTitle>{selectedBucket.label}</DialogTitle>
                 <DialogDescription>
-                  {selectedBucket.events.length} transaction{selectedBucket.events.length === 1 ? "" : "s"} · Bought {formatMoney(selectedBucket.totalBoughtGbp, "GBP")} · Sold {formatMoney(selectedBucket.totalSoldGbp, "GBP")}
+                  One row per buy or sell. {selectedBucket.events.length} transaction{selectedBucket.events.length === 1 ? "" : "s"} · Bought {formatMoney(selectedBucket.totalBoughtGbp, "GBP")} · Sold {formatMoney(selectedBucket.totalSoldGbp, "GBP")}
                 </DialogDescription>
               </DialogHeader>
-              <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Realised P/L</p>
-                <p className={`mt-2 text-2xl font-semibold tabular-nums ${selectedBucket.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                  {formatSignedMoney(selectedBucket.realisedPlGbp)}
-                </p>
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Realised P/L</p>
+                  <p className={`mt-2 text-2xl font-semibold tabular-nums ${selectedBucket.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {formatSignedMoney(selectedBucket.realisedPlGbp)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <Badge variant="outline" className="border-emerald-500/20 text-emerald-400">
+                    {selectedBucket.buyCount} buy{selectedBucket.buyCount === 1 ? "" : "s"}
+                  </Badge>
+                  <Badge variant="outline" className="border-red-500/20 text-red-400">
+                    {selectedBucket.sellCount} sell{selectedBucket.sellCount === 1 ? "" : "s"}
+                  </Badge>
+                </div>
               </div>
-              <PeriodTransactionsTable events={selectedBucket.events} sellPlLookup={sellPlLookup} />
+              <PeriodTransactionList events={selectedBucket.events} sellPlLookup={sellPlLookup} />
             </>
           ) : null}
         </DialogContent>
