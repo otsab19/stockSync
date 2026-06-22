@@ -2,6 +2,20 @@ import { buildTradeCycles } from "@/lib/dashboard/trade-cycles"
 import type { PortfolioActivityEvent } from "@/types/portfolio"
 
 export type ActivityDatePreset = "today" | "yesterday" | "last-7d" | "last-30d" | "custom"
+export type PlGroupBy = "day" | "week" | "month" | "year"
+
+export type PlPeriodBucket = {
+  key: string
+  label: string
+  start: Date
+  end: Date
+  realisedPlGbp: number
+  buyCount: number
+  sellCount: number
+  totalBoughtGbp: number
+  totalSoldGbp: number
+  events: PortfolioActivityEvent[]
+}
 
 export type ActivityPeriodSummary = {
   buyCount: number
@@ -188,4 +202,200 @@ export function splitActivityBySide(activity: PortfolioActivityEvent[]) {
     buys: sortActivityByTimestamp(buys),
     sells: sortActivityByTimestamp(sells),
   }
+}
+
+export function startOfWeek(date: Date) {
+  const next = startOfDay(date)
+  const weekday = next.getDay()
+  const diff = weekday === 0 ? -6 : 1 - weekday
+  next.setDate(next.getDate() + diff)
+  return next
+}
+
+export function endOfWeek(date: Date) {
+  const next = startOfWeek(date)
+  next.setDate(next.getDate() + 6)
+  return endOfDay(next)
+}
+
+export function startOfMonth(date: Date) {
+  return startOfDay(new Date(date.getFullYear(), date.getMonth(), 1))
+}
+
+export function endOfMonth(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0))
+}
+
+export function startOfYear(date: Date) {
+  return startOfDay(new Date(date.getFullYear(), 0, 1))
+}
+
+export function endOfYear(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), 11, 31))
+}
+
+function getMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+function getYearKey(date: Date) {
+  return String(date.getFullYear())
+}
+
+export function getPlPeriodKey(timestamp: string | Date, groupBy: PlGroupBy) {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp)
+
+  switch (groupBy) {
+    case "day":
+      return formatDateInputValue(date)
+    case "week":
+      return formatDateInputValue(startOfWeek(date))
+    case "month":
+      return getMonthKey(date)
+    case "year":
+      return getYearKey(date)
+  }
+}
+
+export function getPlPeriodBounds(key: string, groupBy: PlGroupBy) {
+  switch (groupBy) {
+    case "day": {
+      const date = parseDateInputValue(key)
+      return { start: startOfDay(date), end: endOfDay(date) }
+    }
+    case "week": {
+      const date = parseDateInputValue(key)
+      return { start: startOfWeek(date), end: endOfWeek(date) }
+    }
+    case "month": {
+      const [year, month] = key.split("-").map(Number)
+      const date = new Date(year, month - 1, 1)
+      return { start: startOfMonth(date), end: endOfMonth(date) }
+    }
+    case "year": {
+      const date = new Date(Number(key), 0, 1)
+      return { start: startOfYear(date), end: endOfYear(date) }
+    }
+  }
+}
+
+export function formatPlPeriodLabel(key: string, groupBy: PlGroupBy) {
+  const shortFormatter = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })
+  const monthFormatter = new Intl.DateTimeFormat("en-GB", {
+    month: "short",
+    year: "numeric",
+  })
+  const yearFormatter = new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+  })
+
+  switch (groupBy) {
+    case "day":
+      return shortFormatter.format(parseDateInputValue(key))
+    case "week": {
+      const { start, end } = getPlPeriodBounds(key, "week")
+      return `${shortFormatter.format(start)} – ${shortFormatter.format(end)}`
+    }
+    case "month": {
+      const [year, month] = key.split("-").map(Number)
+      return monthFormatter.format(new Date(year, month - 1, 1))
+    }
+    case "year":
+      return yearFormatter.format(new Date(Number(key), 0, 1))
+  }
+}
+
+function createEmptyPlPeriodBucket(key: string, groupBy: PlGroupBy): PlPeriodBucket {
+  const { start, end } = getPlPeriodBounds(key, groupBy)
+  return {
+    key,
+    label: formatPlPeriodLabel(key, groupBy),
+    start,
+    end,
+    realisedPlGbp: 0,
+    buyCount: 0,
+    sellCount: 0,
+    totalBoughtGbp: 0,
+    totalSoldGbp: 0,
+    events: [],
+  }
+}
+
+function* iteratePlPeriodKeys(rangeStart: Date, rangeEnd: Date, groupBy: PlGroupBy) {
+  const cursor = startOfDay(rangeStart)
+  const end = endOfDay(rangeEnd)
+
+  switch (groupBy) {
+    case "day": {
+      while (cursor.getTime() <= end.getTime()) {
+        yield formatDateInputValue(cursor)
+        cursor.setDate(cursor.getDate() + 1)
+      }
+      return
+    }
+    case "week": {
+      let current = startOfWeek(cursor)
+      while (current.getTime() <= end.getTime()) {
+        yield formatDateInputValue(current)
+        current = new Date(current)
+        current.setDate(current.getDate() + 7)
+      }
+      return
+    }
+    case "month": {
+      let current = startOfMonth(cursor)
+      while (current.getTime() <= end.getTime()) {
+        yield getMonthKey(current)
+        current = new Date(current.getFullYear(), current.getMonth() + 1, 1)
+      }
+      return
+    }
+    case "year": {
+      let current = startOfYear(cursor)
+      while (current.getTime() <= end.getTime()) {
+        yield getYearKey(current)
+        current = new Date(current.getFullYear() + 1, 0, 1)
+      }
+    }
+  }
+}
+
+export function buildPlPeriodSeries(
+  activity: PortfolioActivityEvent[],
+  sellPlLookup: Map<string, number | null>,
+  groupBy: PlGroupBy,
+  rangeStart: Date,
+  rangeEnd: Date
+): PlPeriodBucket[] {
+  const buckets = new Map<string, PlPeriodBucket>()
+
+  for (const key of iteratePlPeriodKeys(rangeStart, rangeEnd, groupBy)) {
+    buckets.set(key, createEmptyPlPeriodBucket(key, groupBy))
+  }
+
+  filterActivityByDateRange(activity, rangeStart, rangeEnd).forEach((event) => {
+    const key = getPlPeriodKey(event.timestamp, groupBy)
+    const bucket = buckets.get(key) ?? createEmptyPlPeriodBucket(key, groupBy)
+    bucket.events.push(event)
+    buckets.set(key, bucket)
+  })
+
+  return Array.from(buckets.values())
+    .map((bucket) => {
+      const summary = summarizeActivityPeriod(bucket.events, sellPlLookup)
+      return {
+        ...bucket,
+        realisedPlGbp: summary.totalRealisedPlGbp,
+        buyCount: summary.buyCount,
+        sellCount: summary.sellCount,
+        totalBoughtGbp: summary.totalBoughtGbp,
+        totalSoldGbp: summary.totalSoldGbp,
+        events: sortActivityByTimestamp(bucket.events),
+      }
+    })
+    .sort((left, right) => left.start.getTime() - right.start.getTime())
 }

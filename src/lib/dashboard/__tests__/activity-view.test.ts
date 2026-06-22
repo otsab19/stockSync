@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  buildPlPeriodSeries,
   buildSellPlLookup,
   filterActivityByDateRange,
   formatDateRangeLabel,
@@ -112,5 +113,27 @@ describe("activity view", () => {
   it("formats single-day and multi-day labels", () => {
     expect(formatDateRangeLabel(new Date(2026, 5, 1), new Date(2026, 5, 1))).toContain("Jun")
     expect(formatDateRangeLabel(new Date(2026, 4, 28), new Date(2026, 5, 1))).toContain("–")
+  })
+
+  it("builds daily realised p/l buckets for a date range", () => {
+    const activity = [
+      makeEvent({ id: "a", type: "buy", timestamp: "2026-06-01T09:00:00Z", grossAmountGbp: 100 }),
+      makeEvent({ id: "b", type: "sell", timestamp: "2026-06-01T12:00:00Z", grossAmountGbp: 130, realisedProfitGbp: 30 }),
+      makeEvent({ id: "c", type: "sell", timestamp: "2026-06-02T12:00:00Z", grossAmountGbp: 80, realisedProfitGbp: -10 }),
+    ]
+    const lookup = buildSellPlLookup(activity)
+    const series = buildPlPeriodSeries(
+      activity,
+      lookup,
+      "day",
+      new Date(2026, 5, 1, 0, 0, 0, 0),
+      new Date(2026, 5, 2, 23, 59, 59, 999)
+    )
+
+    expect(series).toHaveLength(2)
+    expect(series[0]?.realisedPlGbp).toBe(30)
+    expect(series[0]?.events).toHaveLength(2)
+    expect(series[1]?.realisedPlGbp).toBe(-10)
+    expect(series[1]?.events).toHaveLength(1)
   })
 })

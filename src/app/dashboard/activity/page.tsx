@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, RefreshCw, Search } from "lucide-react"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
+import { ActivityPlChart } from "@/components/dashboard/activity-pl-chart"
 import { BrokerFreshnessList, FreshnessBadge } from "@/components/dashboard/freshness-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -504,6 +505,15 @@ export default function DashboardActivityPage() {
           <p className="mt-1 text-xs text-muted-foreground">{rawActivity.length} total legs loaded</p>
         </div>
       </section>
+
+      {rawActivity.length > 0 ? (
+        <ActivityPlChart
+          activity={rawActivity}
+          sellPlLookup={sellPlLookup}
+          rangeStart={dateRange.start}
+          rangeEnd={dateRange.end}
+        />
+      ) : null}
 
       {rawActivity.length === 0 ? (
         <Card className="border-dashed border-white/12 bg-white/[0.02]">
