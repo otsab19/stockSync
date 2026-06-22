@@ -11,7 +11,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { buildLivePortfolioStats, formatMoney } from "@/lib/dashboard/filter-engine"
+import { formatMoney } from "@/lib/dashboard/filter-engine"
+import { getActivitySide } from "@/lib/dashboard/activity-view"
+import {
+  buildBrokerPerformanceBreakdown,
+  buildCumulativeRealisedPlSeries,
+  buildHistoryPerformanceMetrics,
+  buildMonthlyRealisedPl,
+  buildTickerTradeSummaries,
+} from "@/lib/dashboard/history-metrics"
 import { buildTradeCycles, groupTradeCycles, type TradeCycleGroupBy } from "@/lib/dashboard/trade-cycles"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
 import type { BrokerId, PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portfolio"
@@ -77,25 +85,6 @@ function hasActiveHistoryFilters(filters: HistoryFilterState) {
 
 const brokerColours = ["#5eead4", "#60a5fa", "#f59e0b", "#a78bfa", "#f472b6", "#22d3ee"]
 
-type TickerSummary = {
-  ticker: string
-  companyName: string
-  broker: BrokerId
-  brokerLabel: string
-  tradeCount: number
-  buyCount: number
-  sellCount: number
-  totalBoughtGbp: number
-  totalSoldGbp: number
-  totalShares: number
-  soldShares: number
-  avgBuyPrice: number
-  avgSellPrice: number
-  netPLGbp: number
-  nativeCurrency: "GBP" | "USD"
-}
-
-
 function getTimeRangeStart(range: ActivityTimeRange) {
   const now = new Date()
   switch (range) {
@@ -144,7 +133,7 @@ function filterHistoryActivity(activity: PortfolioActivityEvent[], filters: Hist
   const filtered = activity.filter((event) => {
     const eventTimestamp = new Date(event.timestamp)
     const matchesRange = !rangeStart || eventTimestamp >= rangeStart
-    const matchesType = filters.activityType === "all" || event.type === filters.activityType
+    const matchesType = filters.activityType === "all" || getActivitySide(event) === filters.activityType
     const matchesBroker = filters.brokers.length === 0 || filters.brokers.includes(event.broker)
     const matchesSearch = !search
       || event.ticker.toLowerCase().includes(search)
@@ -163,99 +152,6 @@ function filterHistoryActivity(activity: PortfolioActivityEvent[], filters: Hist
       case "timestamp": default: return (new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()) * direction
     }
   })
-}
-
-function buildTickerSummaries(activity: PortfolioActivityEvent[]): TickerSummary[] {
-  const map = new Map<string, TickerSummary>()
-
-  activity.forEach((event) => {
-    const key = `${event.ticker}:${event.broker}`
-    const existing = map.get(key) ?? {
-      ticker: event.ticker,
-      companyName: event.companyName,
-      broker: event.broker,
-      brokerLabel: event.brokerLabel,
-      tradeCount: 0,
-      buyCount: 0,
-      sellCount: 0,
-      totalBoughtGbp: 0,
-      totalSoldGbp: 0,
-      totalShares: 0,
-      soldShares: 0,
-      avgBuyPrice: 0,
-      avgSellPrice: 0,
-      netPLGbp: 0,
-      nativeCurrency: event.nativeCurrency,
-    }
-
-    existing.tradeCount += 1
-    if (event.type === "buy") {
-      existing.buyCount += 1
-      existing.totalBoughtGbp += event.grossAmountGbp
-      existing.totalShares += event.shares
-    } else {
-      existing.sellCount += 1
-      existing.totalSoldGbp += event.grossAmountGbp
-      existing.soldShares += event.shares
-    }
-    existing.avgBuyPrice = existing.totalShares > 0 ? existing.totalBoughtGbp / existing.totalShares : 0
-    existing.avgSellPrice = existing.soldShares > 0 ? existing.totalSoldGbp / existing.soldShares : 0
-    existing.netPLGbp = existing.soldShares > 0 ? existing.totalSoldGbp - (existing.avgBuyPrice * existing.soldShares) : 0
-    map.set(key, existing)
-  })
-
-  return Array.from(map.values())
-}
-
-function buildDailyFlow(activity: PortfolioActivityEvent[]) {
-  const byDay = new Map<string, { timestamp: string; buyValueGbp: number; sellValueGbp: number; tradeCount: number }>()
-
-  activity
-    .slice()
-    .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime())
-    .forEach((event) => {
-      const day = new Date(event.timestamp)
-      day.setHours(0, 0, 0, 0)
-      const key = day.toISOString()
-      const current = byDay.get(key) ?? { timestamp: key, buyValueGbp: 0, sellValueGbp: 0, tradeCount: 0 }
-      if (event.type === "buy") current.buyValueGbp += event.grossAmountGbp
-      else current.sellValueGbp += event.grossAmountGbp
-      current.tradeCount += 1
-      byDay.set(key, current)
-    })
-
-  let cumulativeNetFlowGbp = 0
-  return Array.from(byDay.values()).map((entry) => {
-    const netFlowGbp = entry.sellValueGbp - entry.buyValueGbp
-    cumulativeNetFlowGbp += netFlowGbp
-    return { ...entry, netFlowGbp, cumulativeNetFlowGbp }
-  })
-}
-
-function buildBrokerFlow(activity: PortfolioActivityEvent[]) {
-  const brokerMap = new Map<string, { broker: BrokerId; brokerLabel: string; valueGbp: number }>()
-  activity.forEach((event) => {
-    const existing = brokerMap.get(event.broker)
-    if (existing) { existing.valueGbp += event.grossAmountGbp; return }
-    brokerMap.set(event.broker, { broker: event.broker, brokerLabel: event.brokerLabel, valueGbp: event.grossAmountGbp })
-  })
-  return Array.from(brokerMap.values()).sort((l, r) => r.valueGbp - l.valueGbp)
-}
-
-function buildMonthlyFlow(activity: PortfolioActivityEvent[]) {
-  const byMonth = new Map<string, { month: string; buyValueGbp: number; sellValueGbp: number; tradeCount: number }>()
-  activity.forEach((event) => {
-    const d = new Date(event.timestamp)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    const current = byMonth.get(key) ?? { month: key, buyValueGbp: 0, sellValueGbp: 0, tradeCount: 0 }
-    if (event.type === "buy") current.buyValueGbp += event.grossAmountGbp
-    else current.sellValueGbp += event.grossAmountGbp
-    current.tradeCount += 1
-    byMonth.set(key, current)
-  })
-  return Array.from(byMonth.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, v]) => v)
 }
 
 function formatShortDate(value: string) {
@@ -479,7 +375,6 @@ export default function DashboardHistoryPage() {
       : portfolio.filter((position) => filters.brokers.includes(position.broker)),
     [filters.brokers, portfolio]
   )
-  const livePortfolioStats = useMemo(() => buildLivePortfolioStats(filteredPortfolio), [filteredPortfolio])
   const availableBrokers = useMemo(
     () => Array.from(new Map<BrokerId, { broker: BrokerId; label: string }>([
       ...portfolio.map((p) => [p.broker, { broker: p.broker, label: p.brokerLabel }] as const),
@@ -487,9 +382,8 @@ export default function DashboardHistoryPage() {
     ]).values()),
     [portfolio, rawActivity]
   )
-
   const filteredActivity = useMemo(() => filterHistoryActivity(rawActivity, filters), [filters, rawActivity])
-  const tickerSummaries = useMemo(() => buildTickerSummaries(filteredActivity), [filteredActivity])
+  const tickerSummaries = useMemo(() => buildTickerTradeSummaries(filteredActivity), [filteredActivity])
 
   // Apply quick filters
   const displayActivity = useMemo(() => {
@@ -502,57 +396,54 @@ export default function DashboardHistoryPage() {
       return filteredActivity.filter((e) => topTickers.includes(e.ticker))
     }
     if (filters.quickFilter === "profitable") {
-      const profitableTickers = new Set(tickerSummaries.filter((s) => s.netPLGbp > 0).map((s) => `${s.ticker}:${s.broker}`))
+      const profitableTickers = new Set(tickerSummaries.filter((s) => s.netPlGbp > 0).map((s) => `${s.ticker}:${s.broker}`))
       return filteredActivity.filter((e) => profitableTickers.has(`${e.ticker}:${e.broker}`))
     }
     if (filters.quickFilter === "loss-making") {
-      const lossTickers = new Set(tickerSummaries.filter((s) => s.netPLGbp < 0).map((s) => `${s.ticker}:${s.broker}`))
+      const lossTickers = new Set(tickerSummaries.filter((s) => s.netPlGbp < 0).map((s) => `${s.ticker}:${s.broker}`))
       return filteredActivity.filter((e) => lossTickers.has(`${e.ticker}:${e.broker}`))
     }
     return filteredActivity
   }, [filteredActivity, filters.quickFilter, tickerSummaries])
 
-  const historySeries = useMemo(() => buildDailyFlow(displayActivity), [displayActivity])
-  const brokerFlow = useMemo(() => buildBrokerFlow(displayActivity), [displayActivity])
-  const monthlyFlow = useMemo(() => buildMonthlyFlow(displayActivity), [displayActivity])
+  const performanceMetrics = useMemo(
+    () => buildHistoryPerformanceMetrics(filteredPortfolio, filteredActivity),
+    [filteredActivity, filteredPortfolio]
+  )
+  const cumulativePlSeries = useMemo(() => buildCumulativeRealisedPlSeries(filteredActivity), [filteredActivity])
+  const brokerBreakdown = useMemo(
+    () => buildBrokerPerformanceBreakdown(filteredPortfolio, filteredActivity),
+    [filteredActivity, filteredPortfolio]
+  )
+  const monthlyPl = useMemo(() => buildMonthlyRealisedPl(filteredActivity), [filteredActivity])
+  const closedTradeCycles = useMemo(
+    () => buildTradeCycles(filteredActivity).filter((cycle) => cycle.sell && cycle.plGbp !== null),
+    [filteredActivity]
+  )
 
   // Analytics computations
-  const topGainers = useMemo(() => tickerSummaries.filter((s) => s.sellCount > 0).sort((a, b) => b.netPLGbp - a.netPLGbp).slice(0, 5), [tickerSummaries])
-  const topLosers = useMemo(() => tickerSummaries.filter((s) => s.sellCount > 0 && s.netPLGbp < 0).sort((a, b) => a.netPLGbp - b.netPLGbp).slice(0, 5), [tickerSummaries])
+  const topGainers = useMemo(
+    () => tickerSummaries.filter((s) => s.closedTradeCount > 0).sort((a, b) => b.netPlGbp - a.netPlGbp).slice(0, 5),
+    [tickerSummaries]
+  )
+  const topLosers = useMemo(
+    () => tickerSummaries.filter((s) => s.closedTradeCount > 0 && s.netPlGbp < 0).sort((a, b) => a.netPlGbp - b.netPlGbp).slice(0, 5),
+    [tickerSummaries]
+  )
   const mostTraded = useMemo(() => [...tickerSummaries].sort((a, b) => b.tradeCount - a.tradeCount).slice(0, 5), [tickerSummaries])
 
-  const sells = displayActivity.filter((e) => e.type === "sell")
-  const winRate = sells.length > 0
-    ? (sells.filter((e) => {
-        const summary = tickerSummaries.find((s) => s.ticker === e.ticker && s.broker === e.broker)
-        return summary && summary.netPLGbp > 0
-      }).length / sells.length * 100)
-    : 0
+  const bestClosedTrade = closedTradeCycles.length > 0
+    ? closedTradeCycles.reduce((best, cycle) => ((cycle.plGbp ?? 0) > (best.plGbp ?? 0) ? cycle : best))
+    : null
+  const worstClosedTrade = closedTradeCycles.length > 0
+    ? closedTradeCycles.reduce((worst, cycle) => ((cycle.plGbp ?? 0) < (worst.plGbp ?? 0) ? cycle : worst))
+    : null
 
-  const bestTrade = displayActivity.length > 0 ? displayActivity.reduce((best, e) => e.grossAmountGbp > best.grossAmountGbp ? e : best) : null
-  const worstTrade = displayActivity.length > 0 ? displayActivity.reduce((worst, e) => e.grossAmountGbp < worst.grossAmountGbp ? e : worst) : null
+  const avgTradeSizeGbp = displayActivity.length === 0
+    ? 0
+    : displayActivity.reduce((sum, e) => sum + e.grossAmountGbp, 0) / displayActivity.length
 
-  // Realized P&L from trade history (broker-reported where available)
-  const realisedPL = (() => {
-    const explicitPL = displayActivity
-      .filter((e) => e.realisedProfitGbp !== undefined)
-      .reduce((sum, e) => sum + (e.realisedProfitGbp ?? 0), 0)
-
-    if (explicitPL !== 0) return explicitPL
-
-    return tickerSummaries
-      .filter((s) => s.buyCount > 0 && s.sellCount > 0)
-      .reduce((sum, s) => sum + s.netPLGbp, 0)
-  })()
-
-  const displayPortfolioValueGbp = livePortfolioStats.totalPortfolioValueGbp
-  const displayTotalInvestedGbp = livePortfolioStats.totalInvestedGbp
-  const displayTotalReturnGbp = livePortfolioStats.unrealisedReturnGbp + realisedPL
-  const returnOnInvestedPercent = displayTotalInvestedGbp > 0
-    ? (displayTotalReturnGbp / displayTotalInvestedGbp) * 100
-    : 0
-
-  const avgTradeSizeGbp = displayActivity.length === 0 ? 0 : displayActivity.reduce((sum, e) => sum + e.grossAmountGbp, 0) / displayActivity.length
+  const { open: openMetrics, history: historyMetrics } = performanceMetrics
 
   const hasAnyActivity = rawActivity.length > 0
   const hasFilteredResults = displayActivity.length > 0
@@ -578,36 +469,79 @@ export default function DashboardHistoryPage() {
         }
       />
 
-      {/* KPI Strip */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      {/* KPI Strip — open positions (live) + closed trade performance (filtered history) */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Portfolio value</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(displayPortfolioValueGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Current value of open holdings (broker API)</p>
-        </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total invested</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(displayTotalInvestedGbp, "GBP")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">What you paid for open holdings (shares × avg price)</p>
-        </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total return</p>
-          <p className={`mt-2 text-2xl font-semibold tracking-tight ${displayTotalReturnGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatSignedMoney(displayTotalReturnGbp)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Unrealised on open + realised from history</p>
-        </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Return %</p>
-          <p className={`mt-2 text-2xl font-semibold tracking-tight ${returnOnInvestedPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-            {returnOnInvestedPercent >= 0 ? "+" : ""}{returnOnInvestedPercent.toFixed(1)}%
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Open value</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(openMetrics.valueGbp, "GBP")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {openMetrics.positionCount} open position{openMetrics.positionCount === 1 ? "" : "s"} across {brokerBreakdown.length} broker{brokerBreakdown.length === 1 ? "" : "s"}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">On invested cost basis</p>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Unrealised P/L</p>
+          <p className={`mt-2 text-2xl font-semibold tracking-tight ${openMetrics.unrealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {formatSignedMoney(openMetrics.unrealisedPlGbp)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {openMetrics.unrealisedReturnPercent >= 0 ? "+" : ""}{openMetrics.unrealisedReturnPercent.toFixed(1)}% on {formatMoney(openMetrics.costBasisGbp, "GBP")} cost basis
+          </p>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Realised P/L</p>
+          <p className={`mt-2 text-2xl font-semibold tracking-tight ${historyMetrics.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {formatSignedMoney(historyMetrics.realisedPlGbp)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {historyMetrics.realisedReturnPercent >= 0 ? "+" : ""}{historyMetrics.realisedReturnPercent.toFixed(1)}% on closed trades in range
+          </p>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Capital in</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(historyMetrics.totalBoughtGbp, "GBP")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Gross buy volume in selected range</p>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Capital out</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(historyMetrics.totalSoldGbp, "GBP")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Gross sell volume in selected range</p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Win rate</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{winRate.toFixed(1)}%</p>
-          <p className="mt-1 text-xs text-muted-foreground">{tradeStats.completedTradeCount} completed round trips</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{historyMetrics.winRate.toFixed(1)}%</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {historyMetrics.closedTradeCount} closed round trip{historyMetrics.closedTradeCount === 1 ? "" : "s"}
+          </p>
         </div>
       </section>
+
+      {brokerBreakdown.length > 1 ? (
+        <section className="grid gap-4 sm:grid-cols-2">
+          {brokerBreakdown.map((broker) => (
+            <div key={broker.broker} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-sm font-semibold">{broker.brokerLabel}</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Open value</p>
+                  <p className="mt-1 text-sm font-semibold tabular-nums">{formatMoney(broker.openValueGbp, "GBP")}</p>
+                </div>
+                <div>
+                  <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Unrealised</p>
+                  <p className={`mt-1 text-sm font-semibold tabular-nums ${broker.unrealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {formatSignedMoney(broker.unrealisedPlGbp)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Realised</p>
+                  <p className={`mt-1 text-sm font-semibold tabular-nums ${broker.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {formatSignedMoney(broker.realisedPlGbp)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       {/* Filters */}
       <Card className="border-white/10">
@@ -785,7 +719,7 @@ export default function DashboardHistoryPage() {
                       <p className="text-sm font-semibold">{s.ticker}</p>
                       <p className="text-xs text-muted-foreground">{s.companyName} • {s.brokerLabel}</p>
                     </div>
-                    <span className="text-sm font-semibold text-emerald-400">{formatSignedMoney(s.netPLGbp)}</span>
+                    <span className="text-sm font-semibold text-emerald-400">{formatSignedMoney(s.netPlGbp)}</span>
                   </div>
                 ))}
               </CardContent>
@@ -805,7 +739,7 @@ export default function DashboardHistoryPage() {
                       <p className="text-sm font-semibold">{s.ticker}</p>
                       <p className="text-xs text-muted-foreground">{s.companyName} • {s.brokerLabel}</p>
                     </div>
-                    <span className="text-sm font-semibold text-red-400">{formatSignedMoney(s.netPLGbp)}</span>
+                    <span className="text-sm font-semibold text-red-400">{formatSignedMoney(s.netPlGbp)}</span>
                   </div>
                 ))}
               </CardContent>
@@ -835,30 +769,34 @@ export default function DashboardHistoryPage() {
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Avg trade size</p>
               <p className="mt-2 text-xl font-semibold">{formatMoney(avgTradeSizeGbp, "GBP")}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Mean value per trade</p>
+              <p className="mt-1 text-xs text-muted-foreground">Mean leg value in filtered range</p>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Best single trade</p>
-              {bestTrade ? (
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Best closed trade</p>
+              {bestClosedTrade?.sell ? (
                 <>
-                  <p className="mt-2 text-xl font-semibold">{formatMoney(bestTrade.grossAmountGbp, "GBP")}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{bestTrade.ticker} • {bestTrade.type} • {formatShortDate(bestTrade.timestamp)}</p>
+                  <p className="mt-2 text-xl font-semibold text-emerald-400">{formatSignedMoney(bestClosedTrade.plGbp ?? 0)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {bestClosedTrade.ticker} • {formatShortDate(bestClosedTrade.sell.timestamp)}
+                  </p>
                 </>
               ) : <p className="mt-2 text-sm text-muted-foreground">—</p>}
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Smallest trade</p>
-              {worstTrade ? (
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Worst closed trade</p>
+              {worstClosedTrade?.sell ? (
                 <>
-                  <p className="mt-2 text-xl font-semibold">{formatMoney(worstTrade.grossAmountGbp, "GBP")}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{worstTrade.ticker} • {worstTrade.type} • {formatShortDate(worstTrade.timestamp)}</p>
+                  <p className="mt-2 text-xl font-semibold text-red-400">{formatSignedMoney(worstClosedTrade.plGbp ?? 0)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {worstClosedTrade.ticker} • {formatShortDate(worstClosedTrade.sell.timestamp)}
+                  </p>
                 </>
               ) : <p className="mt-2 text-sm text-muted-foreground">—</p>}
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Active days</p>
-              <p className="mt-2 text-xl font-semibold">{historySeries.length}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Days with at least one trade</p>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Trading days</p>
+              <p className="mt-2 text-xl font-semibold">{cumulativePlSeries.length}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Days with at least one closed trade</p>
             </div>
           </section>
 
@@ -866,54 +804,67 @@ export default function DashboardHistoryPage() {
           <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
             <Card className="border-white/10">
               <CardHeader>
-                <CardTitle>Cumulative net flow</CardTitle>
-                <CardDescription>How buys and sells compound over time.</CardDescription>
+                <CardTitle>Cumulative realised P/L</CardTitle>
+                <CardDescription>Profit and loss from closed trades over time (FIFO / broker-reported).</CardDescription>
               </CardHeader>
               <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={historySeries}>
-                    <defs>
-                      <linearGradient id="historyArea" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.52} />
-                        <stop offset="95%" stopColor="#60a5fa" stopOpacity={0.03} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
-                    <XAxis dataKey="timestamp" tickLine={false} axisLine={false} tickMargin={10} tickFormatter={(v) => formatShortDate(String(v))} />
-                    <YAxis tickLine={false} axisLine={false} width={72} tickFormatter={(v) => `£${Number(v ?? 0).toFixed(0)}`} />
-                    <Tooltip formatter={(v) => formatMoney(Number(v ?? 0), "GBP")} labelFormatter={(v) => formatLongDateTime(String(v))} />
-                    <Area type="monotone" dataKey="cumulativeNetFlowGbp" stroke="#60a5fa" fill="url(#historyArea)" strokeWidth={2.5} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {cumulativePlSeries.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={cumulativePlSeries}>
+                      <defs>
+                        <linearGradient id="historyPlArea" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#34d399" stopOpacity={0.52} />
+                          <stop offset="95%" stopColor="#34d399" stopOpacity={0.03} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+                      <XAxis dataKey="timestamp" tickLine={false} axisLine={false} tickMargin={10} tickFormatter={(v) => formatShortDate(String(v))} />
+                      <YAxis tickLine={false} axisLine={false} width={72} tickFormatter={(v) => `£${Number(v ?? 0).toFixed(0)}`} />
+                      <Tooltip formatter={(v) => formatSignedMoney(Number(v ?? 0))} labelFormatter={(v) => formatLongDateTime(String(v))} />
+                      <Area type="monotone" dataKey="cumulativeRealisedPlGbp" stroke="#34d399" fill="url(#historyPlArea)" strokeWidth={2.5} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No closed trades in this range yet.</p>
+                )}
               </CardContent>
             </Card>
 
             <Card className="border-white/10">
               <CardHeader>
-                <CardTitle>Broker mix</CardTitle>
-                <CardDescription>Gross traded value by broker.</CardDescription>
+                <CardTitle>Broker breakdown</CardTitle>
+                <CardDescription>Open value and realised P/L per broker.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="h-[200px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={brokerFlow} dataKey="valueGbp" nameKey="brokerLabel" innerRadius={50} outerRadius={80} paddingAngle={3}>
-                        {brokerFlow.map((entry, index) => (
-                          <Cell key={entry.broker} fill={brokerColours[index % brokerColours.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(v) => formatMoney(Number(v ?? 0), "GBP")} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {brokerBreakdown.some((entry) => entry.openValueGbp > 0) ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={brokerBreakdown} dataKey="openValueGbp" nameKey="brokerLabel" innerRadius={50} outerRadius={80} paddingAngle={3}>
+                          {brokerBreakdown.map((entry, index) => (
+                            <Cell key={entry.broker} fill={brokerColours[index % brokerColours.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v) => formatMoney(Number(v ?? 0), "GBP")} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No open positions.</p>
+                  )}
                 </div>
                 <div className="space-y-2">
-                  {brokerFlow.map((entry, index) => (
+                  {brokerBreakdown.map((entry, index) => (
                     <div key={entry.broker} className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
                       <div className="flex items-center gap-2">
                         <span className="size-2 rounded-full" style={{ backgroundColor: brokerColours[index % brokerColours.length] }} />
                         <span className="text-sm font-medium">{entry.brokerLabel}</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">{formatMoney(entry.valueGbp, "GBP")}</span>
+                      <div className="text-right text-xs">
+                        <p className="tabular-nums text-muted-foreground">{formatMoney(entry.openValueGbp, "GBP")} open</p>
+                        <p className={`tabular-nums font-medium ${entry.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {formatSignedMoney(entry.realisedPlGbp)} realised
+                        </p>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -921,22 +872,21 @@ export default function DashboardHistoryPage() {
             </Card>
           </section>
 
-          {/* Monthly cadence */}
-          {monthlyFlow.length > 1 && (
+          {/* Monthly realised P/L */}
+          {monthlyPl.length > 1 && (
             <Card className="border-white/10">
               <CardHeader>
-                <CardTitle>Monthly investment cadence</CardTitle>
-                <CardDescription>Buy vs sell volume per month.</CardDescription>
+                <CardTitle>Monthly realised P/L</CardTitle>
+                <CardDescription>Closed-trade profit and loss by month in the selected range.</CardDescription>
               </CardHeader>
               <CardContent className="h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyFlow}>
+                  <BarChart data={monthlyPl}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
                     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={10} tickFormatter={formatMonth} />
                     <YAxis tickLine={false} axisLine={false} width={72} tickFormatter={(v) => `£${Number(v ?? 0).toFixed(0)}`} />
-                    <Tooltip formatter={(v) => formatMoney(Number(v ?? 0), "GBP")} labelFormatter={(v) => formatMonth(String(v))} />
-                    <Bar dataKey="buyValueGbp" fill="#34d399" radius={[6, 6, 0, 0]} name="Buy" />
-                    <Bar dataKey="sellValueGbp" fill="#38bdf8" radius={[6, 6, 0, 0]} name="Sell" />
+                    <Tooltip formatter={(v) => formatSignedMoney(Number(v ?? 0))} labelFormatter={(v) => formatMonth(String(v))} />
+                    <Bar dataKey="realisedPlGbp" fill="#34d399" radius={[6, 6, 0, 0]} name="Realised P/L" />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -981,8 +931,8 @@ export default function DashboardHistoryPage() {
                           <TableCell className="text-right tabular-nums text-xs">{s.sellCount}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatMoney(s.totalBoughtGbp, "GBP")}</TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatMoney(s.totalSoldGbp, "GBP")}</TableCell>
-                          <TableCell className={`text-right tabular-nums text-xs font-semibold ${s.netPLGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                            {formatSignedMoney(s.netPLGbp)}
+                          <TableCell className={`text-right tabular-nums text-xs font-semibold ${s.netPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {formatSignedMoney(s.netPlGbp)}
                           </TableCell>
                         </TableRow>
                       ))}
