@@ -1094,6 +1094,12 @@ function isPositionLikeRow(row: EtoroApiRow) {
     "instrument.symbol",
     "instrument.displaySymbol",
     "instrument.code",
+    "symbolFull",
+    "SymbolFull",
+    "internalSymbolFull",
+    "InternalSymbolFull",
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
     "ticker",
     "symbol",
     "market.symbol",
@@ -1259,6 +1265,10 @@ function mapEtoroRowToPosition(
     "instrument.symbol",
     "instrument.displaySymbol",
     "instrument.DisplaySymbol",
+    "symbolFull",
+    "SymbolFull",
+    "internalSymbolFull",
+    "InternalSymbolFull",
     "symbol",
     "Symbol",
     "ticker",
@@ -1343,9 +1353,12 @@ function mapEtoroRowToPosition(
   const livePrice = (rawLivePrice === null ? null : normalizeEtoroPrice(rawLivePrice, priceScale))
     ?? (rateSnapshot?.livePrice === null || rateSnapshot?.livePrice === undefined ? null : normalizeEtoroPrice(rateSnapshot.livePrice, priceScale))
     ?? (resolvedShares && resolvedShares > 0 && currentValue !== null ? currentValue / resolvedShares : null)
+    ?? resolvedAveragePrice
   const companyName = getStringValue(row, [
     "instrument.name",
     "instrument.Name",
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
     "displayName",
     "DisplayName",
     "name",
@@ -1650,8 +1663,8 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
 
     logger.info({ broker: "etoro", path, rows: rows.length, instrumentIds: instrumentIds.length }, "Loaded eToro portfolio rows")
 
-    let metadataByInstrumentId: Map<number, EtoroInstrumentMetadata>
-    let ratesByInstrumentId: Map<number, EtoroRateSnapshot>
+    let metadataByInstrumentId = new Map<number, EtoroInstrumentMetadata>()
+    let ratesByInstrumentId = new Map<number, EtoroRateSnapshot>()
 
     try {
       ;[metadataByInstrumentId, ratesByInstrumentId] = await Promise.all([
@@ -1660,9 +1673,10 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
       ])
       logger.debug({ broker: "etoro", metadataCount: metadataByInstrumentId.size, rateCount: ratesByInstrumentId.size }, "eToro enrichment data loaded")
     } catch (error) {
-      logger.error({ broker: "etoro", error: getErrorLogDetails(error) }, "eToro enrichment failed")
-      const detail = error instanceof Error ? error.message : "Unable to enrich eToro positions with instrument metadata and live rates."
-      throw new Error(`eToro portfolio data loaded, but enrichment failed. ${detail}`)
+      logger.warn(
+        { broker: "etoro", error: getErrorLogDetails(error), instrumentIds: instrumentIds.length },
+        "eToro portfolio enrichment failed; continuing with portfolio row fields only"
+      )
     }
 
     const portfolioData = mapEtoroRowsToPortfolioData(rows, metadataByInstrumentId, ratesByInstrumentId)

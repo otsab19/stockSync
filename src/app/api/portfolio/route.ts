@@ -26,6 +26,43 @@ type ProfileRow = {
   etoro_api_secret: string | null
 }
 
+async function recordBrokerSyncFailure(
+  writer: SupabaseWriter,
+  userId: string,
+  broker: BrokerId,
+  error: unknown
+) {
+  const now = new Date().toISOString()
+  const message = error instanceof Error ? error.message : "Broker sync failed."
+
+  await writer.from("broker_connections").upsert(
+    {
+      user_id: userId,
+      broker,
+      source_type: "broker_api",
+      sync_mode: "manual",
+      sync_status: "failed",
+      is_enabled: true,
+      last_synced_at: now,
+      last_error: message,
+      updated_at: now,
+    },
+    { onConflict: "user_id,broker,source_type" }
+  )
+
+  await writer.from("sync_runs").insert({
+    user_id: userId,
+    broker,
+    trigger: "manual",
+    source_type: "broker_api",
+    status: "failed",
+    positions_imported: 0,
+    started_at: now,
+    finished_at: now,
+    error_message: message,
+  })
+}
+
 async function recordBrokerSync(
   writer: SupabaseWriter,
   userId: string,
@@ -132,11 +169,15 @@ async function refreshSupabaseBrokerData(includeActivity: boolean) {
     const provider = getBrokerProvider(broker)
     if (!provider) continue
 
-    const syncData = includeActivity && provider.getSyncData
-      ? await provider.getSyncData({ apiKey, apiSecret })
-      : { positions: await provider.getPositions({ apiKey, apiSecret }), activity: undefined }
+    try {
+      const syncData = includeActivity && provider.getSyncData
+        ? await provider.getSyncData({ apiKey, apiSecret })
+        : { positions: await provider.getPositions({ apiKey, apiSecret }), activity: undefined }
 
-    await recordBrokerSync(writer, user.id, broker, syncData.positions, syncData.activity)
+      await recordBrokerSync(writer, user.id, broker, syncData.positions, syncData.activity)
+    } catch (error) {
+      await recordBrokerSyncFailure(writer, user.id, broker, error)
+    }
   }
 }
 

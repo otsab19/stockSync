@@ -136,13 +136,15 @@ function DashboardContent() {
   const [highlightedTicker, setHighlightedTicker] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const fetchPortfolio = useCallback(async () => {
+  const fetchPortfolio = useCallback(async ({ refresh = false }: { refresh?: boolean } = {}) => {
     try {
       setIsRefreshing(true)
 
       const repository = createClientPortfolioRepository()
       const data: PortfolioApiResponse = await repository.getPortfolio({
+        refresh,
         includeActivity: true,
+        preferCache: !refresh,
       })
 
       setPortfolioResponse(data)
@@ -229,9 +231,9 @@ function DashboardContent() {
         }
         actions={
           <>
-          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio()} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
             <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
-            {isRefreshing ? "Refreshing..." : "Refresh"}
+            {isRefreshing ? "Syncing..." : "Sync now"}
           </Button>
           <Link
             href="/dashboard/history"

@@ -561,5 +561,32 @@ describe("eToro live mapper", () => {
 
     expect(sell?.realisedProfitGbp).toBe(150)
   })
+
+  it("maps eToro portfolio rows that only expose symbolFull", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [
+          {
+            instrumentID: 1137,
+            symbolFull: "NVDA",
+            instrumentDisplayName: "NVIDIA Corporation",
+            IsBuy: true,
+            units: 2,
+            Amount: 1000,
+            averageOpen: 500,
+            currentRate: 510,
+            currency: "USD",
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0]?.ticker).toBe("NVDA")
+    expect(positions[0]?.companyName).toBe("NVIDIA Corporation")
+    expect(positions[0]?.shares).toBe(2)
+  })
 })
 
