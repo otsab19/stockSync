@@ -68,11 +68,14 @@ VAPID_PRIVATE_KEY=                     # required for push notifications
 # eToro API configuration (optional overrides)
 ETORO_API_BASE_URL=                    # defaults to https://public-api.etoro.com
 ETORO_ACCOUNT_MODE=                    # "real" (default) or "demo"
+ETORO_ACCOUNT_CURRENCY=                # "GBP" or "USD"; inferred from history when unset
 ETORO_PORTFOLIO_PATHS=                 # comma-separated custom paths
 ETORO_ORDER_PATH=                      # defaults to /api/v1/trading/orders
 
 # Trading 212 API configuration (optional override)
 TRADING212_API_BASE_URL=               # defaults to https://live.trading212.com/api/v0
+TRADING212_ACCOUNT_CURRENCY=           # "GBP" or "USD"; defaults to GBP when wallet currency is missing
+TRADING212_HISTORY_MAX_PAGES=           # history pagination cap; default 50 pages (50 orders each)
 
 # Live trading controls
 ENABLE_LIVE_TRADING=false              # must be true before /api/orders/submit places broker orders

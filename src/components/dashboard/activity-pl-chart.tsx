@@ -10,6 +10,7 @@ import {
   buildPlPeriodSeries,
   getActivitySide,
   getSellPlGbp,
+  groupActivityByTickerAndBroker,
   type PlGroupBy,
   type PlPeriodBucket,
 } from "@/lib/dashboard/activity-view"
@@ -60,56 +61,89 @@ function PeriodTransactionList({
   events: PortfolioActivityEvent[]
   sellPlLookup: Map<string, number | null>
 }) {
+  const tickerGroups = useMemo(
+    () => groupActivityByTickerAndBroker(events, sellPlLookup),
+    [events, sellPlLookup]
+  )
+
   if (events.length === 0) {
     return <p className="text-sm text-muted-foreground">No transactions in this period.</p>
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02]">
-      <div className="overflow-x-auto">
-        <div className="min-w-[52rem]">
-          <div className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(4rem,0.6fr)_minmax(6rem,0.8fr)_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] gap-3 border-b border-white/8 bg-card/95 px-4 py-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            <span>Time</span>
-            <span>Side</span>
-            <span>Ticker</span>
-            <span>Broker</span>
-            <span className="text-right">Shares</span>
-            <span className="text-right">Amount</span>
-            <span className="text-right">P/L</span>
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+      {tickerGroups.map((tickerGroup) => (
+        <section key={tickerGroup.ticker} className="overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 bg-white/[0.03] px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold">{tickerGroup.ticker}</p>
+              {tickerGroup.companyName.trim().toUpperCase() !== tickerGroup.ticker.trim().toUpperCase() ? (
+                <p className="text-xs text-muted-foreground">{tickerGroup.companyName}</p>
+              ) : null}
+            </div>
+            <p className={`text-sm font-semibold tabular-nums ${tickerGroup.totalRealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {formatSignedMoney(tickerGroup.totalRealisedPlGbp)}
+            </p>
           </div>
-          <div className="max-h-[min(58vh,560px)] overflow-y-auto">
-            {events.map((event) => {
-              const side = getActivitySide(event)
-              const plGbp = side === "sell" ? getSellPlGbp(event, sellPlLookup) : null
 
-              return (
-                <div
-                  key={event.id}
-                  className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(4rem,0.6fr)_minmax(6rem,0.8fr)_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] items-center gap-3 border-b border-white/6 px-4 py-3 text-sm whitespace-nowrap last:border-b-0"
-                >
-                  <span className="truncate text-xs text-muted-foreground">{formatShortDateTime(event.timestamp)}</span>
-                  <span className={`text-xs font-semibold uppercase ${side === "buy" ? "text-emerald-400" : "text-red-400"}`}>
-                    {side}
-                  </span>
-                  <span className="truncate text-sm font-semibold">{event.ticker}</span>
-                  <span className="truncate text-xs text-muted-foreground">{event.brokerLabel}</span>
-                  <span className="text-right text-xs tabular-nums">{formatTradeShares(event.shares)}</span>
-                  <span className="text-right text-xs tabular-nums">{formatMoney(event.grossAmountGbp, "GBP")}</span>
-                  <span className="text-right text-xs tabular-nums">
-                    {plGbp === null ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      <span className={plGbp >= 0 ? "font-medium text-emerald-400" : "font-medium text-red-400"}>
-                        {formatSignedMoney(plGbp)}
-                      </span>
-                    )}
-                  </span>
+          <div className="divide-y divide-white/6">
+            {tickerGroup.brokers.map((brokerGroup) => (
+              <div key={`${tickerGroup.ticker}:${brokerGroup.broker}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-white/[0.015] px-4 py-2.5">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{brokerGroup.brokerLabel}</span>
+                    <span className="ml-2">
+                      {brokerGroup.buyCount} buy{brokerGroup.buyCount === 1 ? "" : "s"} · {brokerGroup.sellCount} sell{brokerGroup.sellCount === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <p className={`text-xs font-semibold tabular-nums ${brokerGroup.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {formatSignedMoney(brokerGroup.realisedPlGbp)}
+                  </p>
                 </div>
-              )
-            })}
+
+                <div className="overflow-x-auto">
+                  <div className="min-w-[48rem]">
+                    <div className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] gap-3 border-b border-white/6 px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      <span>Time</span>
+                      <span>Side</span>
+                      <span className="text-right">Shares</span>
+                      <span className="text-right">Amount</span>
+                      <span className="text-right">P/L</span>
+                    </div>
+                    {brokerGroup.events.map((event) => {
+                      const side = getActivitySide(event)
+                      const plGbp = side === "sell" ? getSellPlGbp(event, sellPlLookup) : null
+
+                      return (
+                        <div
+                          key={event.id}
+                          className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] items-center gap-3 border-b border-white/6 px-4 py-2.5 text-sm whitespace-nowrap last:border-b-0"
+                        >
+                          <span className="truncate text-xs text-muted-foreground">{formatShortDateTime(event.timestamp)}</span>
+                          <span className={`text-xs font-semibold uppercase ${side === "buy" ? "text-emerald-400" : "text-red-400"}`}>
+                            {side}
+                          </span>
+                          <span className="text-right text-xs tabular-nums">{formatTradeShares(event.shares)}</span>
+                          <span className="text-right text-xs tabular-nums">{formatMoney(event.grossAmountGbp, "GBP")}</span>
+                          <span className="text-right text-xs tabular-nums">
+                            {plGbp === null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <span className={plGbp >= 0 ? "font-medium text-emerald-400" : "font-medium text-red-400"}>
+                                {formatSignedMoney(plGbp)}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      </div>
+        </section>
+      ))}
     </div>
   )
 }
@@ -244,7 +278,7 @@ export function ActivityPlChart({
               <DialogHeader>
                 <DialogTitle>{selectedBucket.label}</DialogTitle>
                 <DialogDescription>
-                  One row per buy or sell. {selectedBucket.events.length} transaction{selectedBucket.events.length === 1 ? "" : "s"} · Bought {formatMoney(selectedBucket.totalBoughtGbp, "GBP")} · Sold {formatMoney(selectedBucket.totalSoldGbp, "GBP")}
+                  Grouped by stock and broker. {selectedBucket.events.length} transaction{selectedBucket.events.length === 1 ? "" : "s"} · Bought {formatMoney(selectedBucket.totalBoughtGbp, "GBP")} · Sold {formatMoney(selectedBucket.totalSoldGbp, "GBP")}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">

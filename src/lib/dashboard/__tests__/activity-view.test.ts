@@ -7,6 +7,7 @@ import {
   getActivitySide,
   getDateRangeForPreset,
   getSellPlGbp,
+  groupActivityByTickerAndBroker,
   splitActivityBySide,
   summarizeActivityPeriod,
 } from "@/lib/dashboard/activity-view"
@@ -113,6 +114,23 @@ describe("activity view", () => {
   it("formats single-day and multi-day labels", () => {
     expect(formatDateRangeLabel(new Date(2026, 5, 1), new Date(2026, 5, 1))).toContain("Jun")
     expect(formatDateRangeLabel(new Date(2026, 4, 28), new Date(2026, 5, 1))).toContain("–")
+  })
+
+  it("groups period activity by ticker and broker p/l", () => {
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", ticker: "NVDA", grossAmountGbp: 100 }),
+      makeEvent({ id: "t212:sell-1", type: "sell", ticker: "NVDA", grossAmountGbp: 130, realisedProfitGbp: 30 }),
+      makeEvent({ id: "etoro:1:close", type: "sell", broker: "etoro", brokerLabel: "eToro", ticker: "NVDA", grossAmountGbp: 80, realisedProfitGbp: 20, orderType: "Close" }),
+      makeEvent({ id: "t212:buy-2", type: "buy", ticker: "AAPL", grossAmountGbp: 50 }),
+    ]
+    const lookup = buildSellPlLookup(activity)
+    const groups = groupActivityByTickerAndBroker(activity, lookup)
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0]?.ticker).toBe("NVDA")
+    expect(groups[0]?.totalRealisedPlGbp).toBe(50)
+    expect(groups[0]?.brokers).toHaveLength(2)
+    expect(groups[0]?.brokers.map((broker) => broker.brokerLabel).sort()).toEqual(["Trading 212", "eToro"])
   })
 
   it("builds daily realised p/l buckets for a date range", () => {

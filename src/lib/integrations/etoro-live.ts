@@ -409,6 +409,103 @@ function convertNativeToGbp(amount: number, currency: PortfolioPosition["nativeC
   return currency === "GBP" ? amount : amount * USD_TO_GBP_FALLBACK_RATE
 }
 
+function getConfiguredEtoroAccountCurrency(): PortfolioPosition["nativeCurrency"] | null {
+  const value = process.env.ETORO_ACCOUNT_CURRENCY?.trim().toUpperCase()
+  if (value === "GBP" || value === "USD") return value
+  return null
+}
+
+function estimateEtoroOpenNotional(
+  row: EtoroApiRow,
+  metadataByInstrumentId: Map<number, EtoroInstrumentMetadata>
+) {
+  const instrumentId = getEtoroInstrumentId(row)
+  const metadata = instrumentId === null ? undefined : metadataByInstrumentId.get(instrumentId)
+  const historyTicker = getStringValue(row, ["symbolFull", "SymbolFull", "ticker", "Ticker", "symbol", "Symbol"])
+  const historyExchangeName = getStringValue(row, [
+    "exchangeName", "ExchangeName", "exchange", "Exchange",
+    "exchangeDescription", "ExchangeDescription",
+    "market", "Market", "marketName", "MarketName",
+  ])
+  const historyExchangeId = getNumberValue(row, ["exchangeID", "ExchangeID", "exchangeId", "ExchangeId"])
+  const isHistoryLse = Boolean(
+    historyTicker?.match(/\.(L|LSE|LON)$/i)
+    || historyTicker?.match(/^[A-Z]+l$/)
+    || historyExchangeName?.match(/\b(LSE|London|LON)\b/i)
+    || historyExchangeId === 1
+    || historyExchangeId === 46
+  )
+  const rowCurrencyInfo = getEtoroCurrencyInfo(getStringValue(row, ["currency", "Currency", "currencyCode", "CurrencyCode"]))
+  const rawOpenRate = getEtoroHistoryPrice(row, "open")
+  const rawCloseRate = getEtoroHistoryPrice(row, "close")
+  const historyUnits = getEtoroHistoryUnits(row, "open")
+    ?? getEtoroHistoryUnits(row, "close")
+  const historyInvestment = getNumberValue(row, [
+    "investment",
+    "Investment",
+    "initialInvestment",
+    "InitialInvestment",
+    "amount",
+    "Amount",
+    "openAmount",
+    "OpenAmount",
+    "investedAmount",
+    "InvestedAmount",
+    "requestedAmount",
+    "RequestedAmount",
+  ])
+  const priceScale = inferEtoroHistoryPriceScale({
+    metadata,
+    isHistoryLse,
+    rowCurrencyInfo,
+    rawOpenRate,
+    rawCloseRate,
+    units: historyUnits,
+    investment: historyInvestment,
+  })
+  const openPrice = rawOpenRate === null ? null : normalizeEtoroPrice(rawOpenRate, priceScale)
+  const leverage = Math.max(getNumberValue(row, ["leverage", "Leverage"]) ?? 1, 1)
+  const shares = openPrice !== null && openPrice > 0
+    ? getEtoroHistoryShares(row, "open", openPrice, leverage)
+    : historyUnits
+  const nativeCurrency = metadata?.currency ?? (isHistoryLse || priceScale === "gbx" ? "GBP" : rowCurrencyInfo.currency ?? "USD")
+
+  if (shares === null || openPrice === null || openPrice <= 0) {
+    return null
+  }
+
+  const nativeNotional = (Math.abs(shares) * openPrice) / leverage
+  const notionalGbp = convertNativeToGbp(nativeNotional, nativeCurrency)
+  const notionalUsd = nativeCurrency === "USD" ? nativeNotional : nativeNotional / USD_TO_GBP_FALLBACK_RATE
+
+  return { investment: historyInvestment, notionalGbp, notionalUsd }
+}
+
+export function inferEtoroAccountCurrency(
+  rows: EtoroTradeHistoryRow[],
+  metadataByInstrumentId: Map<number, EtoroInstrumentMetadata> = new Map()
+): PortfolioPosition["nativeCurrency"] {
+  const configured = getConfiguredEtoroAccountCurrency()
+  if (configured) return configured
+
+  let gbpWins = 0
+  let usdWins = 0
+
+  rows.forEach((row) => {
+    const estimate = estimateEtoroOpenNotional(row as unknown as EtoroApiRow, metadataByInstrumentId)
+    if (!estimate || estimate.investment === null) return
+
+    const { investment, notionalGbp, notionalUsd } = estimate
+    const gbpDistance = Math.abs(investment - notionalGbp) / Math.max(notionalGbp, 1)
+    const usdDistance = Math.abs(investment - notionalUsd) / Math.max(notionalUsd, 1)
+
+    if (gbpDistance + 0.05 < usdDistance) gbpWins += 1
+    else if (usdDistance + 0.05 < gbpDistance) usdWins += 1
+  })
+
+  return gbpWins > usdWins ? "GBP" : "USD"
+}
+
 function getHistoryMinDate() {
   const date = new Date()
   date.setFullYear(date.getFullYear() - 5)
@@ -554,7 +651,8 @@ function getEtoroHistoryShares(row: EtoroApiRow, phase: EtoroActivityPhase, pric
 function createEtoroActivityEvent(
   row: EtoroTradeHistoryRow,
   phase: EtoroActivityPhase,
-  metadataByInstrumentId: Map<number, EtoroInstrumentMetadata>
+  metadataByInstrumentId: Map<number, EtoroInstrumentMetadata>,
+  accountCurrency: PortfolioPosition["nativeCurrency"]
 ): PortfolioActivityEvent | null {
   const normalizedRow = row as unknown as EtoroApiRow
   const instrumentId = getEtoroInstrumentId(normalizedRow)
@@ -711,8 +809,6 @@ function createEtoroActivityEvent(
   const closeNetProfit = phase === "close"
     ? getNumberValue(normalizedRow, ["netProfit", "NetProfit", "profit", "Profit", "pnl", "Pnl", "PnL"])
     : null
-  const accountCurrency: PortfolioPosition["nativeCurrency"] =
-    rowCurrencyInfo.currency === "GBP" ? "GBP" : "USD"
   const realisedProfitGbp = closeNetProfit !== null
     ? convertNativeToGbp(closeNetProfit, accountCurrency)
     : undefined
@@ -1800,9 +1896,12 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
 
   logger.info({ broker: "etoro", historyPaths: loadedHistoryPaths, historyRows: historyRows.length, historyInstrumentIds: instrumentIds.length }, "Loaded eToro trade history rows")
 
+  const accountCurrency = inferEtoroAccountCurrency(historyRows, metadataByInstrumentId)
+  logger.info({ broker: "etoro", accountCurrency }, "Resolved eToro account currency for trade history")
+
   const activity = historyRows.flatMap((row) => {
-    const openEvent = createEtoroActivityEvent(row, "open", metadataByInstrumentId)
-    const closeEvent = createEtoroActivityEvent(row, "close", metadataByInstrumentId)
+    const openEvent = createEtoroActivityEvent(row, "open", metadataByInstrumentId, accountCurrency)
+    const closeEvent = createEtoroActivityEvent(row, "close", metadataByInstrumentId, accountCurrency)
     return [openEvent, closeEvent].filter((event): event is PortfolioActivityEvent => Boolean(event))
   })
 

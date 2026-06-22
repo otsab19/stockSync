@@ -518,5 +518,48 @@ describe("eToro live mapper", () => {
     expect(activity.filter((event) => event.type === "sell").map((event) => event.ticker)).toEqual(["NVDA", "RR"])
     expect(activity.find((event) => event.ticker === "RR" && event.type === "sell")?.price).toBe(13.2408)
   })
+
+  it("maps eToro net profit in GBP when the account currency is inferred as GBP", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+
+      if (requestUrl.includes("/trading/info/trade/history")) {
+        return Response.json([
+          {
+            instrumentID: 1137,
+            isBuy: true,
+            openTimestamp: "2026-05-29T16:57:00Z",
+            closeTimestamp: "2026-06-01T14:50:00Z",
+            openRate: 215.27,
+            closeRate: 220.29,
+            units: 31.123705,
+            investment: 5293,
+            netProfit: 150,
+          },
+        ])
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return Response.json({
+          instrumentDisplayDatas: [
+            { instrumentID: 1137, instrumentDisplayName: "NVIDIA Corporation", symbolFull: "NVDA", priceSource: "NASDAQ" },
+          ],
+        })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const activity = await fetchEtoroActivityFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+    const sell = activity.find((event) => event.orderType === "Close")
+
+    expect(sell?.realisedProfitGbp).toBe(150)
+  })
 })
 

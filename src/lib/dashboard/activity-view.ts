@@ -1,5 +1,5 @@
 import { buildTradeCycles } from "@/lib/dashboard/trade-cycles"
-import type { PortfolioActivityEvent } from "@/types/portfolio"
+import type { BrokerId, PortfolioActivityEvent } from "@/types/portfolio"
 
 export type ActivityDatePreset = "today" | "yesterday" | "last-7d" | "last-30d" | "custom"
 export type PlGroupBy = "day" | "week" | "month" | "year"
@@ -144,6 +144,75 @@ export function getSellPlGbp(
 ) {
   if (sell.realisedProfitGbp !== undefined) return sell.realisedProfitGbp
   return plLookup.get(sell.id) ?? null
+}
+
+export type TickerBrokerPlGroup = {
+  ticker: string
+  companyName: string
+  totalRealisedPlGbp: number
+  brokers: Array<{
+    broker: BrokerId
+    brokerLabel: string
+    realisedPlGbp: number
+    sellCount: number
+    buyCount: number
+    events: PortfolioActivityEvent[]
+  }>
+}
+
+export function groupActivityByTickerAndBroker(
+  activity: PortfolioActivityEvent[],
+  sellPlLookup: Map<string, number | null> = new Map()
+): TickerBrokerPlGroup[] {
+  const tickerMap = new Map<string, TickerBrokerPlGroup>()
+
+  activity.forEach((event) => {
+    const tickerGroup = tickerMap.get(event.ticker) ?? {
+      ticker: event.ticker,
+      companyName: event.companyName,
+      totalRealisedPlGbp: 0,
+      brokers: [],
+    }
+
+    let brokerGroup = tickerGroup.brokers.find((entry) => entry.broker === event.broker)
+    if (!brokerGroup) {
+      brokerGroup = {
+        broker: event.broker,
+        brokerLabel: event.brokerLabel,
+        realisedPlGbp: 0,
+        sellCount: 0,
+        buyCount: 0,
+        events: [],
+      }
+      tickerGroup.brokers.push(brokerGroup)
+    }
+
+    brokerGroup.events.push(event)
+    if (getActivitySide(event) === "buy") {
+      brokerGroup.buyCount += 1
+    } else {
+      brokerGroup.sellCount += 1
+      const plGbp = getSellPlGbp(event, sellPlLookup)
+      if (plGbp !== null) {
+        brokerGroup.realisedPlGbp += plGbp
+        tickerGroup.totalRealisedPlGbp += plGbp
+      }
+    }
+
+    tickerMap.set(event.ticker, tickerGroup)
+  })
+
+  return Array.from(tickerMap.values())
+    .map((group) => ({
+      ...group,
+      brokers: group.brokers
+        .map((broker) => ({
+          ...broker,
+          events: sortActivityByTimestamp(broker.events),
+        }))
+        .sort((left, right) => right.realisedPlGbp - left.realisedPlGbp || left.brokerLabel.localeCompare(right.brokerLabel)),
+    }))
+    .sort((left, right) => Math.abs(right.totalRealisedPlGbp) - Math.abs(left.totalRealisedPlGbp) || left.ticker.localeCompare(right.ticker))
 }
 
 export function summarizeActivityPeriod(

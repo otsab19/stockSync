@@ -11,7 +11,7 @@ const DEFAULT_TRADING212_API_BASE_URL = "https://live.trading212.com/api/v0"
 const DEFAULT_TRADING212_HISTORY_PATH = "/equity/history/orders?limit=50"
 const USD_TO_GBP_FALLBACK_RATE = 0.79
 const TRADING212_HISTORY_PAGE_DELAY_MS = 11_000 // 6 req/min limit — keep safely below one request every 10s
-const DEFAULT_TRADING212_HISTORY_MAX_PAGES = 2
+const DEFAULT_TRADING212_HISTORY_MAX_PAGES = 50
 
 type Trading212ApiRow = Record<string, unknown>
 
@@ -88,6 +88,63 @@ function normalizeCurrency(value: string | null): PortfolioPosition["nativeCurre
   }
 
   return null
+}
+
+function getConfiguredTrading212AccountCurrency(): PortfolioPosition["nativeCurrency"] | null {
+  const value = process.env.TRADING212_ACCOUNT_CURRENCY?.trim().toUpperCase()
+  if (value === "GBP" || value === "USD") return value
+  return null
+}
+
+function getIdentifierValue(row: Trading212ApiRow, keys: string[]) {
+  for (const key of keys) {
+    const value = key.includes(".") ? getNestedValue(row, key) : row[key]
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value)
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim()
+      if (trimmed) return trimmed
+    }
+  }
+
+  return null
+}
+
+function convertTrading212WalletAmountToGbp(
+  amount: number,
+  walletCurrency: PortfolioPosition["nativeCurrency"] | null,
+  instrumentCurrency: PortfolioPosition["nativeCurrency"] | null,
+  fxRate: number | null,
+  nativeNotional: number | null
+) {
+  const resolvedWalletCurrency = walletCurrency ?? getConfiguredTrading212AccountCurrency() ?? "GBP"
+
+  if (resolvedWalletCurrency === "GBP") {
+    return amount
+  }
+
+  if (resolvedWalletCurrency === "USD") {
+    return amount * USD_TO_GBP_FALLBACK_RATE
+  }
+
+  if (
+    fxRate !== null
+    && fxRate > 0
+    && nativeNotional !== null
+    && nativeNotional > 0
+    && instrumentCurrency === "USD"
+  ) {
+    const impliedGbp = Math.abs(amount) / fxRate
+    const fallbackGbp = nativeNotional * USD_TO_GBP_FALLBACK_RATE
+    if (Math.abs(impliedGbp - fallbackGbp) / Math.max(fallbackGbp, 1) < 0.35) {
+      return impliedGbp
+    }
+  }
+
+  return instrumentCurrency === "GBP" ? amount : amount * USD_TO_GBP_FALLBACK_RATE
 }
 
 function formatTrading212BaseUrl() {
@@ -467,19 +524,25 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
     "fill.walletImpact.currency",
     "walletImpact.currency",
   ]))
+  const resolvedWalletCurrency = walletCurrency ?? getConfiguredTrading212AccountCurrency() ?? "GBP"
   const fxRate = getNumberValue(row, [
     "fill.walletImpact.fxRate",
     "walletImpact.fxRate",
   ])
+  const nativeNotional = quantity !== null && price !== null ? quantity * price : null
 
-  // Derive grossAmount: prefer walletImpact.netValue (already in GBP)
-  // Otherwise fall back to quantity * price (in instrument currency)
   const grossAmountGbp = walletNetValue !== null
-    ? Math.abs(walletNetValue)
+    ? convertTrading212WalletAmountToGbp(
+      Math.abs(walletNetValue),
+      resolvedWalletCurrency,
+      instrumentCurrency,
+      fxRate,
+      nativeNotional
+    )
     : (quantity !== null && price !== null
       ? (instrumentCurrency === "GBP"
         ? quantity * price
-        : fxRate
+        : fxRate && fxRate > 0
           ? (quantity * price) / fxRate
           : (quantity * price) * USD_TO_GBP_FALLBACK_RATE)
       : null)
@@ -490,39 +553,51 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
     return null
   }
 
-  const nativeCurrency = instrumentCurrency ?? walletCurrency ?? "GBP"
-  const orderId = getStringValue(row, ["order.id", "fill.id", "id", "orderId"])
+  const nativeCurrency = instrumentCurrency ?? resolvedWalletCurrency
+  const fillId = getIdentifierValue(row, ["fill.id", "fillId"])
+  const orderId = getIdentifierValue(row, ["order.id", "orderId", "id"])
+  const activityType = normalizeTrading212ActivityType(row, rawQuantity ?? quantity)
   const realisedPL = getNumberValue(row, [
     "fill.walletImpact.realisedProfitLoss",
     "fill.walletImpact.realizedProfitLoss",
-    "fill.walletImpact.realisedProfit",
-    "fill.walletImpact.realizedProfit",
-    "walletImpact.realisedProfitLoss",
-    "walletImpact.realizedProfitLoss",
-    "walletImpact.realisedProfit",
-    "walletImpact.realizedProfit",
-    "realisedProfitLoss",
-    "realizedProfitLoss",
-    "realisedProfit",
-    "realizedProfit",
   ])
+  const realisedProfitGbp = activityType === "sell" && realisedPL !== null
+    ? convertTrading212WalletAmountToGbp(
+      realisedPL,
+      resolvedWalletCurrency,
+      instrumentCurrency,
+      fxRate,
+      nativeNotional
+    )
+    : undefined
+  const activityId = fillId
+    ? `t212:fill:${fillId}`
+    : orderId
+      ? `t212:order:${orderId}:${timestamp}`
+      : `t212:${normalizeTickerSymbol(ticker)}:${timestamp}`
 
   return {
-    id: `t212:${orderId ?? `${ticker}:${timestamp}`}`,
+    id: activityId,
     timestamp,
     broker: "t212",
     brokerLabel: "Trading 212",
     ticker: normalizeTickerSymbol(ticker),
     companyName: companyName ?? ticker,
-    type: normalizeTrading212ActivityType(row, rawQuantity ?? quantity),
+    type: activityType,
     shares: quantity,
     price,
     nativeCurrency,
     grossAmount: grossAmountNative ?? grossAmountGbp,
     grossAmountGbp,
-    realisedProfitGbp: realisedPL ?? undefined,
+    realisedProfitGbp,
     orderType: getStringValue(row, ["order.type", "type", "orderType"]) ?? undefined,
   }
+}
+
+export function mapTrading212HistoryItemsToActivity(items: Trading212ApiRow[]): PortfolioActivityEvent[] {
+  return items
+    .map(mapTrading212OrderRowToActivity)
+    .filter((event): event is PortfolioActivityEvent => Boolean(event))
 }
 
 export function mapTrading212PortfolioResponse(payload: unknown): PortfolioPosition[] {
@@ -624,9 +699,7 @@ export async function fetchTrading212ActivityFromApi(credentials?: string | Brok
     }
   }
 
-  const activity = items
-    .map(mapTrading212OrderRowToActivity)
-    .filter((event): event is PortfolioActivityEvent => Boolean(event))
+  const activity = mapTrading212HistoryItemsToActivity(items)
 
   logger.info({ broker: "t212", historyRows: items.length, activityEvents: activity.length }, "Mapped Trading 212 history into activity events")
 
