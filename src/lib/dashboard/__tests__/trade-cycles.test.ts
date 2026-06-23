@@ -48,6 +48,49 @@ describe("trade cycles", () => {
     expect(cycles[0].sell?.orderType).toBe("Close")
   })
 
+  it("creates separate eToro round trips when only the instrument id is shared", () => {
+    const activity = [
+      makeEvent({
+        id: "etoro:1137:open:2026-05-01T09:00:00Z:100",
+        broker: "etoro",
+        brokerLabel: "eToro",
+        type: "buy",
+        orderType: "Open",
+        grossAmountGbp: 100,
+      }),
+      makeEvent({
+        id: "etoro:1137:close:2026-05-01T15:00:00Z:110",
+        broker: "etoro",
+        brokerLabel: "eToro",
+        type: "sell",
+        orderType: "Close",
+        grossAmountGbp: 110,
+        realisedProfitGbp: 10,
+      }),
+      makeEvent({
+        id: "etoro:1137:open:2026-06-01T09:00:00Z:120",
+        broker: "etoro",
+        brokerLabel: "eToro",
+        type: "buy",
+        orderType: "Open",
+        grossAmountGbp: 120,
+      }),
+      makeEvent({
+        id: "etoro:1137:close:2026-06-01T15:00:00Z:130",
+        broker: "etoro",
+        brokerLabel: "eToro",
+        type: "sell",
+        orderType: "Close",
+        grossAmountGbp: 130,
+        realisedProfitGbp: 10,
+      }),
+    ]
+
+    const groups = groupTradeCyclesByBroker(buildTradeCycles(activity))
+
+    expect(groups.find((group) => group.key === "etoro")?.netPlGbp).toBe(20)
+  })
+
   it("matches trading 212 buys and sells with equal share counts", () => {
     const activity = [
       makeEvent({ id: "t212:buy-1", type: "buy", timestamp: "2026-06-01T09:00:00Z", shares: 10, grossAmountGbp: 50 }),

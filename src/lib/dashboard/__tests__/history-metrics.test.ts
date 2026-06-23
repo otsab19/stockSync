@@ -62,6 +62,25 @@ describe("history metrics", () => {
     expect(metrics.brokers).toHaveLength(2)
   })
 
+  it("keeps realised p/l aligned with per-broker round trips", () => {
+    const portfolio = [
+      makePosition({ broker: "t212", normalizedTotalValueGbp: 100, totalPL: 10, shares: 1, avgPrice: 90, fxRateToGbp: 1 }),
+      makePosition({ broker: "etoro", brokerLabel: "eToro", normalizedTotalValueGbp: 50, totalPL: 5, shares: 1, avgPrice: 45, fxRateToGbp: 1 }),
+    ]
+    const activity = [
+      makeEvent({ id: "t212:buy-1", type: "buy", grossAmountGbp: 100, timestamp: "2026-06-01T09:00:00Z" }),
+      makeEvent({ id: "t212:sell-1", type: "sell", grossAmountGbp: 130, realisedProfitGbp: 30, timestamp: "2026-06-02T09:00:00Z" }),
+      makeEvent({ id: "etoro:1137:open:2026-06-01T09:00:00Z:100", type: "buy", broker: "etoro", brokerLabel: "eToro", orderType: "Open", grossAmountGbp: 100, timestamp: "2026-06-01T09:00:00Z" }),
+      makeEvent({ id: "etoro:1137:close:2026-06-02T09:00:00Z:110", type: "sell", broker: "etoro", brokerLabel: "eToro", orderType: "Close", grossAmountGbp: 120, realisedProfitGbp: 20, timestamp: "2026-06-02T09:00:00Z" }),
+    ]
+
+    const metrics = buildHistoryPerformanceMetrics(portfolio, activity)
+    const brokerRealisedTotal = metrics.brokers.reduce((sum, broker) => sum + broker.realisedPlGbp, 0)
+
+    expect(metrics.history.realisedPlGbp).toBe(50)
+    expect(brokerRealisedTotal).toBe(50)
+  })
+
   it("computes realised p/l and win rate from trade cycles", () => {
     const activity = [
       makeEvent({ id: "buy-1", type: "buy", grossAmountGbp: 100, timestamp: "2026-06-01T09:00:00Z" }),

@@ -493,7 +493,7 @@ export default function DashboardHistoryPage() {
             {formatSignedMoney(historyMetrics.realisedPlGbp)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {historyMetrics.realisedReturnPercent >= 0 ? "+" : ""}{historyMetrics.realisedReturnPercent.toFixed(1)}% on closed trades in range
+            Closed trades only · {historyMetrics.closedTradeCount} round trip{historyMetrics.closedTradeCount === 1 ? "" : "s"} in range
           </p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">

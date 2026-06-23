@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { fetchEtoroActivityFromApi, fetchEtoroSyncDataFromApi, mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
+import { fetchEtoroActivityFromApi, fetchEtoroPortfolioFromApi, fetchEtoroSyncDataFromApi, mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -587,6 +587,110 @@ describe("eToro live mapper", () => {
     expect(positions[0]?.ticker).toBe("NVDA")
     expect(positions[0]?.companyName).toBe("NVIDIA Corporation")
     expect(positions[0]?.shares).toBe(2)
+  })
+
+  it("loads open positions from the PnL endpoint when the portfolio endpoint is empty", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+
+      if (requestUrl.includes("/trading/info/real/pnl")) {
+        return Response.json({
+          clientPortfolio: {
+            positions: [
+              {
+                instrumentID: 1137,
+                symbolFull: "NVDA",
+                instrumentDisplayName: "NVIDIA Corporation",
+                IsBuy: true,
+                units: 2,
+                investment: 1000,
+                OpenRate: 500,
+                currentRate: 510,
+                currency: "USD",
+              },
+            ],
+          },
+        })
+      }
+
+      if (requestUrl.includes("/trading/info/portfolio")) {
+        return Response.json({ clientPortfolio: { positions: [] } })
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return Response.json({
+          instrumentDisplayDatas: [
+            { instrumentID: 1137, instrumentDisplayName: "NVIDIA Corporation", symbolFull: "NVDA", priceSource: "NASDAQ" },
+          ],
+        })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const positions = await fetchEtoroPortfolioFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0]?.ticker).toBe("NVDA")
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/trading/info/real/pnl"))).toBe(true)
+  })
+
+  it("falls back to the portfolio endpoint when the PnL endpoint returns no rows", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url)
+
+      if (requestUrl.includes("/trading/info/real/pnl")) {
+        return Response.json({ clientPortfolio: { positions: [] } })
+      }
+
+      if (requestUrl.includes("/trading/info/portfolio")) {
+        return Response.json({
+          clientPortfolio: {
+            positions: [
+              {
+                instrumentID: 1137,
+                symbolFull: "NVDA",
+                instrumentDisplayName: "NVIDIA Corporation",
+                IsBuy: true,
+                units: 2,
+                Amount: 1000,
+                averageOpen: 500,
+                currentRate: 510,
+                currency: "USD",
+              },
+            ],
+          },
+        })
+      }
+
+      if (requestUrl.includes("/market-data/instruments?")) {
+        return Response.json({
+          instrumentDisplayDatas: [
+            { instrumentID: 1137, instrumentDisplayName: "NVIDIA Corporation", symbolFull: "NVDA", priceSource: "NASDAQ" },
+          ],
+        })
+      }
+
+      if (requestUrl.includes("/market-data/instruments/rates")) {
+        return Response.json({ rates: [] })
+      }
+
+      return new Response("unexpected request", { status: 404 })
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const positions = await fetchEtoroPortfolioFromApi({ apiKey: "api-key", apiSecret: "user-key" })
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0]?.ticker).toBe("NVDA")
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/trading/info/portfolio"))).toBe(true)
   })
 })
 

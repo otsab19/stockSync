@@ -7,6 +7,7 @@ import {
   buildTradeCycles,
   groupTradeCyclesByBroker,
   groupTradeCyclesByStock,
+  sumClosedCycleRealisedPlGbp,
 } from "@/lib/dashboard/trade-cycles"
 import type { BrokerId, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 
@@ -91,10 +92,11 @@ export function buildOpenPositionMetrics(portfolio: PortfolioPosition[]): OpenPo
 }
 
 export function buildHistoryTradeMetrics(activity: PortfolioActivityEvent[]): HistoryTradeMetrics {
-  const sellPlLookup = buildSellPlLookup(activity)
-  const periodSummary = summarizeActivityPeriod(activity, sellPlLookup)
   const cycles = buildTradeCycles(activity)
   const closedCycles = cycles.filter((cycle) => cycle.sell && cycle.plGbp !== null)
+  const realisedPlGbp = sumClosedCycleRealisedPlGbp(activity)
+  const sellPlLookup = buildSellPlLookup(activity)
+  const periodSummary = summarizeActivityPeriod(activity, sellPlLookup)
 
   const closedCostBasisGbp = closedCycles.reduce((sum, cycle) => {
     if (!cycle.sell || cycle.plGbp === null) return sum
@@ -104,14 +106,14 @@ export function buildHistoryTradeMetrics(activity: PortfolioActivityEvent[]): Hi
   const winningTrades = closedCycles.filter((cycle) => (cycle.plGbp ?? 0) > 0).length
 
   return {
-    realisedPlGbp: periodSummary.totalRealisedPlGbp,
+    realisedPlGbp,
     closedTradeCount: closedCycles.length,
     winRate: closedCycles.length > 0 ? (winningTrades / closedCycles.length) * 100 : 0,
     totalBoughtGbp: periodSummary.totalBoughtGbp,
     totalSoldGbp: periodSummary.totalSoldGbp,
     closedCostBasisGbp,
     realisedReturnPercent:
-      closedCostBasisGbp > 0 ? (periodSummary.totalRealisedPlGbp / closedCostBasisGbp) * 100 : 0,
+      closedCostBasisGbp > 0 ? (realisedPlGbp / closedCostBasisGbp) * 100 : 0,
   }
 }
 

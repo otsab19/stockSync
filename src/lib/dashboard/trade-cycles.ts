@@ -37,6 +37,12 @@ export function computeTradeCyclePl(buy: PortfolioActivityEvent | undefined, sel
   return null
 }
 
+export function sumClosedCycleRealisedPlGbp(activity: PortfolioActivityEvent[]) {
+  return buildTradeCycles(activity)
+    .filter((cycle) => cycle.sell && cycle.plGbp !== null)
+    .reduce((sum, cycle) => sum + (cycle.plGbp ?? 0), 0)
+}
+
 function createTradeCycle(
   id: string,
   buys: PortfolioActivityEvent[],
@@ -125,34 +131,46 @@ function buildBrokerFifoCycles(sortedEvents: PortfolioActivityEvent[]) {
   return cycles
 }
 
-export function buildTradeCycles(activity: PortfolioActivityEvent[]): TradeCycle[] {
+function buildEtoroTradeCycles(etoroEvents: PortfolioActivityEvent[]) {
   const cycles: TradeCycle[] = []
-  const etoroPairs = new Map<string, { open?: PortfolioActivityEvent; close?: PortfolioActivityEvent }>()
-  const otherEvents: PortfolioActivityEvent[] = []
+  const openLotsByKey = new Map<string, OpenLot[]>()
 
-  activity.forEach((event) => {
-    const positionId = getEtoroPositionId(event)
-    if (positionId) {
-      const pair = etoroPairs.get(positionId) ?? {}
-      if (isBuyLeg(event)) pair.open = event
-      else pair.close = event
-      etoroPairs.set(positionId, pair)
+  const sortedEvents = [...etoroEvents].sort(
+    (left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()
+  )
+
+  sortedEvents.forEach((event) => {
+    const positionKey = getEtoroPositionId(event) ?? event.id
+
+    if (isBuyLeg(event)) {
+      const queue = openLotsByKey.get(positionKey) ?? []
+      queue.push({ event, remainingShares: event.shares })
+      openLotsByKey.set(positionKey, queue)
       return
     }
 
-    otherEvents.push(event)
-  })
+    const queue = openLotsByKey.get(positionKey) ?? []
+    const { buys, plGbp } = matchSellAgainstFifoQueue(queue, event)
+    openLotsByKey.set(positionKey, queue)
 
-  etoroPairs.forEach((pair, positionId) => {
-    const buys = pair.open ? [pair.open] : []
-    const cycle = createTradeCycle(
-      `etoro-cycle:${positionId}`,
-      buys,
-      pair.close,
-      computeTradeCyclePl(pair.open, pair.close)
-    )
+    const cycle = createTradeCycle(`etoro:${positionKey}:${event.id}`, buys, event, plGbp)
     if (cycle) cycles.push(cycle)
   })
+
+  openLotsByKey.forEach((queue, positionKey) => {
+    queue.forEach((lot) => {
+      const cycle = createTradeCycle(`etoro:${positionKey}:${lot.event.id}:open`, [lot.event], undefined, null)
+      if (cycle) cycles.push(cycle)
+    })
+  })
+
+  return cycles
+}
+
+export function buildTradeCycles(activity: PortfolioActivityEvent[]): TradeCycle[] {
+  const etoroEvents = activity.filter((event) => event.broker === "etoro")
+  const otherEvents = activity.filter((event) => event.broker !== "etoro")
+  const cycles = buildEtoroTradeCycles(etoroEvents)
 
   const sortedOtherEvents = [...otherEvents].sort(
     (left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()

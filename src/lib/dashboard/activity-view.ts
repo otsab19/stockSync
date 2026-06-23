@@ -1,4 +1,4 @@
-import { buildTradeCycles } from "@/lib/dashboard/trade-cycles"
+import { buildTradeCycles, sumClosedCycleRealisedPlGbp } from "@/lib/dashboard/trade-cycles"
 import type { BrokerId, PortfolioActivityEvent } from "@/types/portfolio"
 
 export type ActivityDatePreset = "today" | "yesterday" | "this-week" | "this-month" | "last-7d" | "last-30d" | "custom"
@@ -227,7 +227,6 @@ export function summarizeActivityPeriod(
   let sellCount = 0
   let totalBoughtGbp = 0
   let totalSoldGbp = 0
-  let totalRealisedPlGbp = 0
 
   activity.forEach((event) => {
     if (getActivitySide(event) === "buy") {
@@ -238,9 +237,6 @@ export function summarizeActivityPeriod(
 
     sellCount += 1
     totalSoldGbp += event.grossAmountGbp
-
-    const plGbp = getSellPlGbp(event, sellPlLookup)
-    if (plGbp !== null) totalRealisedPlGbp += plGbp
   })
 
   return {
@@ -248,7 +244,7 @@ export function summarizeActivityPeriod(
     sellCount,
     totalBoughtGbp,
     totalSoldGbp,
-    totalRealisedPlGbp,
+    totalRealisedPlGbp: sumClosedCycleRealisedPlGbp(activity),
   }
 }
 

@@ -798,7 +798,17 @@ function createEtoroActivityEvent(
   const rawTicker = metadata?.ticker ?? historyTicker ?? `ET${instrumentId}`
   const ticker = cleanEtoroTicker(rawTicker, isLse)
   const companyName = metadata?.companyName ?? historyCompanyName ?? ticker
-  const positionId = getNumberValue(normalizedRow, ["positionId", "PositionId"]) ?? instrumentId
+  const openTimestamp = getStringValue(normalizedRow, [
+    "openTimestamp", "OpenTimestamp", "openDateTime", "OpenDateTime", "openDate", "OpenDate", "createdAt", "CreatedAt",
+  ])
+  const closeTimestamp = getStringValue(normalizedRow, [
+    "closeTimestamp", "CloseTimestamp", "closeDateTime", "CloseDateTime", "closeDate", "CloseDate", "lastUpdate", "LastUpdate", "closedAt", "ClosedAt", "updatedAt", "UpdatedAt",
+  ])
+  const apiPositionId = getNumberValue(normalizedRow, ["positionId", "PositionId"])
+  const positionId = apiPositionId
+    ?? (instrumentId !== null
+      ? `${instrumentId}:${openTimestamp ?? ""}:${closeTimestamp ?? ""}`
+      : null)
 
   // For consistent P&L calculations, ALWAYS derive grossAmountGbp from shares * price in native currency.
   // This ensures buy and sell events for the same stock are comparable.
@@ -1299,6 +1309,8 @@ function mapEtoroRowToPosition(
     "InvestedAmount",
     "amountInvested",
     "AmountInvested",
+    "investment",
+    "Investment",
     "costBasis",
     "CostBasis",
     "position.costBasis",
@@ -1381,6 +1393,18 @@ function mapEtoroRowToPosition(
     "recentChange",
     "RecentChange",
   ]) ?? rateSnapshot?.recentChange ?? 0
+  const explicitTotalPl = getNumberValue(row, [
+    "netProfit",
+    "NetProfit",
+    "unrealizedPnL",
+    "UnrealizedPnL",
+    "unrealisedPnL",
+    "UnrealisedPnL",
+    "profit",
+    "Profit",
+    "pnl",
+    "PnL",
+  ])
 
   if (!ticker || resolvedShares === null || resolvedAveragePrice === null || livePrice === null || !currency || resolvedShares <= 0) {
     return null
@@ -1389,6 +1413,12 @@ function mapEtoroRowToPosition(
   const resolvedCompanyName = companyName ?? ticker
   const isLse = metadata?.priceScale === "gbx" || metadata?.currency === "GBP" || priceScale === "gbx"
   const cleanedTicker = cleanEtoroTicker(ticker, isLse)
+  const fxRateToGbp = currency === "GBP" ? 1 : undefined
+  const totalPL = explicitTotalPl === null
+    ? undefined
+    : currency === "GBP"
+      ? explicitTotalPl
+      : explicitTotalPl * (fxRateToGbp ?? USD_TO_GBP_FALLBACK_RATE)
 
   return normalizeImportedHolding({
     broker: "etoro",
@@ -1400,6 +1430,8 @@ function mapEtoroRowToPosition(
     livePrice,
     nativeCurrency: currency,
     assetType: metadata?.assetType ?? normalizeEtoroAssetType(row, resolvedCompanyName),
+    fxRateToGbp,
+    totalPL,
     recentChange,
   })
 }
@@ -1432,10 +1464,10 @@ function getEtoroPortfolioPaths() {
   const mode = process.env.ETORO_ACCOUNT_MODE?.trim().toLowerCase()
 
   if (mode === "demo") {
-    return [DEFAULT_ETORO_DEMO_PORTFOLIO_PATH, DEFAULT_ETORO_DEMO_PNL_PATH]
+    return [DEFAULT_ETORO_DEMO_PNL_PATH, DEFAULT_ETORO_DEMO_PORTFOLIO_PATH]
   }
 
-  return [DEFAULT_ETORO_REAL_PORTFOLIO_PATH, DEFAULT_ETORO_REAL_PNL_PATH]
+  return [DEFAULT_ETORO_REAL_PNL_PATH, DEFAULT_ETORO_REAL_PORTFOLIO_PATH]
 }
 
 function buildEtoroHeaders(apiKey: string, apiSecret: string, requestId = crypto.randomUUID()) {
@@ -1642,6 +1674,8 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
 
   logger.info({ broker: "etoro", mode: process.env.ETORO_ACCOUNT_MODE?.trim().toLowerCase() || "real" }, "Starting eToro portfolio sync")
 
+  let lastMappingFailure: { path: string; sampleKeys: string } | null = null
+
   for (const path of getEtoroPortfolioPaths()) {
     logger.debug({ broker: "etoro", path }, "Requesting eToro portfolio endpoint")
     const response = await fetch(`${baseUrl}${path}`, {
@@ -1684,24 +1718,40 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
 
     logger.info({ broker: "etoro", positions: positions.length }, "Mapped eToro portfolio positions")
 
-    if (rows.length > 0 && positions.length === 0) {
+    if (positions.length > 0) {
+      return portfolioData
+    }
+
+    if (rows.length > 0) {
       if (rows.every(isExplicitNonLongPositionRow)) {
-        return { positions: [], openActivity: [] }
+        logger.debug({ broker: "etoro", path }, "eToro endpoint returned short-only rows; trying next endpoint")
+        continue
       }
 
       const sampleKeys = Object.keys(rows[0] ?? {}).slice(0, 12).join(", ") || "unknown"
-      logger.warn({ broker: "etoro", sampleKeys }, "eToro portfolio rows loaded but none mapped into positions")
-      throw new Error(`eToro responded successfully, but none of the returned positions matched the portfolio fields this app currently supports. Sample row keys: ${sampleKeys}.`)
+      logger.warn({ broker: "etoro", path, sampleKeys }, "eToro portfolio rows loaded but none mapped into positions")
+      lastMappingFailure = { path, sampleKeys }
+      continue
     }
 
-    return portfolioData
+    logger.debug({ broker: "etoro", path }, "eToro portfolio endpoint returned no position rows; trying next endpoint")
   }
 
-  throw new Error(
-    attemptedResponses.length > 0
-      ? `Failed to load the eToro portfolio from the API. Tried: ${attemptedResponses.join("; ")}. The documented real-account path is ${DEFAULT_ETORO_REAL_PORTFOLIO_PATH} on ${baseUrl}; if your account uses demo mode or a different documented path, set ETORO_ACCOUNT_MODE or ETORO_PORTFOLIO_PATHS.`
-      : "Failed to load the eToro portfolio from the API."
-  )
+  if (lastMappingFailure) {
+    throw new Error(
+      `eToro responded successfully, but none of the returned positions matched the portfolio fields this app currently supports. Sample row keys: ${lastMappingFailure.sampleKeys}. If eToro changed its payload shape, update the live mapper or configure ETORO_PORTFOLIO_PATHS for the correct positions endpoint.`
+    )
+  }
+
+  if (attemptedResponses.length > 0) {
+    throw new Error(
+      attemptedResponses.length > 0
+        ? `Failed to load the eToro portfolio from the API. Tried: ${attemptedResponses.join("; ")}. The documented real-account path is ${DEFAULT_ETORO_REAL_PORTFOLIO_PATH} on ${baseUrl}; if your account uses demo mode or a different documented path, set ETORO_ACCOUNT_MODE or ETORO_PORTFOLIO_PATHS.`
+        : "Failed to load the eToro portfolio from the API."
+    )
+  }
+
+  return { positions: [], openActivity: [] }
 }
 
 export async function fetchEtoroPortfolioFromApi(credentials?: string | BrokerApiCredentials): Promise<PortfolioPosition[]> {
@@ -1710,10 +1760,18 @@ export async function fetchEtoroPortfolioFromApi(credentials?: string | BrokerAp
 }
 
 export async function fetchEtoroSyncDataFromApi(credentials?: string | BrokerApiCredentials) {
-  const [portfolioData, historyActivity] = await Promise.all([
-    fetchEtoroPortfolioDataFromApi(credentials),
-    fetchEtoroActivityFromApi(credentials),
-  ])
+  const portfolioData = await fetchEtoroPortfolioDataFromApi(credentials)
+
+  let historyActivity: PortfolioActivityEvent[] = []
+  try {
+    historyActivity = await fetchEtoroActivityFromApi(credentials)
+  } catch (error) {
+    logger.warn(
+      { broker: "etoro", error: getErrorLogDetails(error) },
+      "eToro trade history failed; continuing with portfolio positions only"
+    )
+  }
+
   const activityById = new Map<string, PortfolioActivityEvent>()
 
   historyActivity.forEach((event) => {
