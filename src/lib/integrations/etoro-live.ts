@@ -1098,8 +1098,68 @@ async function fetchEtoroLiveRates(baseUrl: string, headers: ReturnType<typeof b
   )
 }
 
+function getEtoroUnrealizedPlValue(row: EtoroApiRow) {
+  for (const path of [
+    "unrealizedPnL.pnL",
+    "unrealizedPnL.PnL",
+    "unrealizedPnL.pnl",
+    "UnrealizedPnL.pnL",
+    "UnrealizedPnL.PnL",
+    "unrealizedPL.pnL",
+    "UnrealizedPL.pnL",
+  ]) {
+    const value = getNestedValue(row, path)
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value
+    }
+  }
+
+  return getNumberValue(row, [
+    "netProfit",
+    "NetProfit",
+    "unrealizedPnL",
+    "UnrealizedPnL",
+    "unrealisedPnL",
+    "UnrealisedPnL",
+    "profit",
+    "Profit",
+    "pnl",
+    "PnL",
+  ])
+}
+
+function flattenClientPortfolioRows(clientPortfolio: unknown): EtoroApiRow[] {
+  if (!isRecord(clientPortfolio)) {
+    return []
+  }
+
+  const rows: EtoroApiRow[] = []
+  const seen = new Set<EtoroApiRow>()
+
+  const appendRows = (container: unknown) => {
+    if (!isRecord(container)) return
+
+    collectNestedRecords(container).forEach((row) => {
+      if (seen.has(row)) return
+      seen.add(row)
+      rows.push(row)
+    })
+  }
+
+  appendRows(clientPortfolio)
+
+  for (const mirrorKey of ["mirrors", "Mirrors"]) {
+    const mirrors = clientPortfolio[mirrorKey]
+    if (!Array.isArray(mirrors)) continue
+
+    mirrors.filter(isRecord).forEach((mirror) => appendRows(mirror))
+  }
+
+  return rows
+}
+
 function isPositionLikeRow(row: EtoroApiRow) {
-  const hasInstrument = hasAnyValue(row, [
+  const hasInstrument = getEtoroInstrumentId(row) !== null || hasAnyValue(row, [
     "instrument.ticker",
     "instrument.symbol",
     "instrument.displaySymbol",
@@ -1117,6 +1177,7 @@ function isPositionLikeRow(row: EtoroApiRow) {
     "InstrumentId",
     "instrumentId",
     "instrumentID",
+    "positionID",
     "PositionID",
     "PositionId",
     "positionId",
@@ -1137,28 +1198,7 @@ function isPositionLikeRow(row: EtoroApiRow) {
     "Amount",
   ])
 
-  const hasPricing = hasAnyValue(row, [
-    "averageOpen",
-    "AverageOpen",
-    "averageOpenPrice",
-    "AverageOpenPrice",
-    "averagePrice",
-    "AveragePrice",
-    "openRate",
-    "OpenRate",
-    "currentRate",
-    "CurrentRate",
-    "marketPrice",
-    "MarketPrice",
-    "currentPrice",
-    "CurrentPrice",
-    "price",
-    "Price",
-    "lastPrice",
-    "LastPrice",
-  ])
-
-  return hasInstrument && hasSize && hasPricing
+  return hasInstrument && hasSize
 }
 
 function collectNestedRecords(value: unknown): EtoroApiRow[] {
@@ -1222,13 +1262,13 @@ function extractEtoroRows(payload: unknown): EtoroApiRow[] {
     throw new Error("eToro returned an unexpected response format.")
   }
 
-  const clientPortfolioRows = collectNestedRecords(payload.clientPortfolio)
+  const clientPortfolioRows = flattenClientPortfolioRows(payload.clientPortfolio)
 
   if (clientPortfolioRows.length > 0) {
     return clientPortfolioRows
   }
 
-  const topLevelRows = collectNestedRecords(payload)
+  const topLevelRows = flattenClientPortfolioRows(payload)
 
   if (topLevelRows.length > 0) {
     return topLevelRows
@@ -1316,6 +1356,7 @@ function mapEtoroRowToPosition(
     "position.costBasis",
     "totalCost",
     "TotalCost",
+    "amount",
     "Amount",
   ])
   const currentValue = getNumberValue(row, [
@@ -1345,9 +1386,6 @@ function mapEtoroRowToPosition(
   const derivedShares = averagePrice !== null && averagePrice > 0 && totalCost !== null
     ? (totalCost * leverage) / averagePrice
     : null
-  const resolvedShares = shares ?? derivedShares
-  const resolvedAveragePrice = averagePrice
-    ?? (resolvedShares && resolvedShares > 0 && totalCost !== null ? (totalCost * leverage) / resolvedShares : null)
   const rawLivePrice = getNumberValue(row, [
     "marketPrice",
     "MarketPrice",
@@ -1362,8 +1400,19 @@ function mapEtoroRowToPosition(
     "Rate",
     "rate",
   ])
-  const livePrice = (rawLivePrice === null ? null : normalizeEtoroPrice(rawLivePrice, priceScale))
-    ?? (rateSnapshot?.livePrice === null || rateSnapshot?.livePrice === undefined ? null : normalizeEtoroPrice(rateSnapshot.livePrice, priceScale))
+  const rateLivePrice = rateSnapshot?.livePrice === null || rateSnapshot?.livePrice === undefined
+    ? null
+    : normalizeEtoroPrice(rateSnapshot.livePrice, priceScale)
+  const provisionalLivePrice = (rawLivePrice === null ? null : normalizeEtoroPrice(rawLivePrice, priceScale))
+    ?? rateLivePrice
+  const resolvedShares = shares
+    ?? derivedShares
+    ?? (provisionalLivePrice !== null && provisionalLivePrice > 0 && totalCost !== null
+      ? (totalCost * leverage) / provisionalLivePrice
+      : null)
+  const resolvedAveragePrice = averagePrice
+    ?? (resolvedShares && resolvedShares > 0 && totalCost !== null ? (totalCost * leverage) / resolvedShares : null)
+  const livePrice = provisionalLivePrice
     ?? (resolvedShares && resolvedShares > 0 && currentValue !== null ? currentValue / resolvedShares : null)
     ?? resolvedAveragePrice
   const companyName = getStringValue(row, [
@@ -1393,18 +1442,10 @@ function mapEtoroRowToPosition(
     "recentChange",
     "RecentChange",
   ]) ?? rateSnapshot?.recentChange ?? 0
-  const explicitTotalPl = getNumberValue(row, [
-    "netProfit",
-    "NetProfit",
-    "unrealizedPnL",
-    "UnrealizedPnL",
-    "unrealisedPnL",
-    "UnrealisedPnL",
-    "profit",
-    "Profit",
-    "pnl",
-    "PnL",
-  ])
+  const unrealizedPlNative = getEtoroUnrealizedPlValue(row)
+  const nativeTotalValue = currentValue
+    ?? (totalCost !== null && unrealizedPlNative !== null ? totalCost + unrealizedPlNative : null)
+    ?? (resolvedShares && livePrice ? resolvedShares * livePrice : null)
 
   if (!ticker || resolvedShares === null || resolvedAveragePrice === null || livePrice === null || !currency || resolvedShares <= 0) {
     return null
@@ -1414,11 +1455,11 @@ function mapEtoroRowToPosition(
   const isLse = metadata?.priceScale === "gbx" || metadata?.currency === "GBP" || priceScale === "gbx"
   const cleanedTicker = cleanEtoroTicker(ticker, isLse)
   const fxRateToGbp = currency === "GBP" ? 1 : undefined
-  const totalPL = explicitTotalPl === null
+  const totalPL = unrealizedPlNative === null
     ? undefined
     : currency === "GBP"
-      ? explicitTotalPl
-      : explicitTotalPl * (fxRateToGbp ?? USD_TO_GBP_FALLBACK_RATE)
+      ? unrealizedPlNative
+      : unrealizedPlNative * (fxRateToGbp ?? USD_TO_GBP_FALLBACK_RATE)
 
   return normalizeImportedHolding({
     broker: "etoro",
@@ -1431,6 +1472,7 @@ function mapEtoroRowToPosition(
     nativeCurrency: currency,
     assetType: metadata?.assetType ?? normalizeEtoroAssetType(row, resolvedCompanyName),
     fxRateToGbp,
+    nativeTotalValue: nativeTotalValue ?? undefined,
     totalPL,
     recentChange,
   })

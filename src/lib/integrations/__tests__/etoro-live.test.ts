@@ -589,6 +589,65 @@ describe("eToro live mapper", () => {
     expect(positions[0]?.shares).toBe(2)
   })
 
+  it("maps PnL positions that only expose amount and nested unrealizedPnL", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [
+          {
+            positionID: 9001,
+            instrumentID: 1137,
+            symbolFull: "NVDA",
+            instrumentDisplayName: "NVIDIA Corporation",
+            isBuy: true,
+            leverage: 1,
+            amount: 820.72,
+            openRate: 180,
+            currentRate: 182,
+            currency: "USD",
+            unrealizedPnL: { pnL: 42.5 },
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0]?.ticker).toBe("NVDA")
+    expect(positions[0]?.normalizedTotalValueGbp).toBeGreaterThan(0)
+    expect(positions[0]?.totalPL).toBeCloseTo(42.5 * 0.79, 2)
+  })
+
+  it("includes mirror portfolio positions from the PnL payload", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [],
+        mirrors: [
+          {
+            positions: [
+              {
+                positionID: 9101,
+                instrumentID: 1137,
+                symbolFull: "NVDA",
+                isBuy: true,
+                amount: 500,
+                units: 2,
+                openRate: 250,
+                currentRate: 255,
+                currency: "USD",
+              },
+            ],
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0]?.ticker).toBe("NVDA")
+  })
+
   it("loads open positions from the PnL endpoint when the portfolio endpoint is empty", async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       const requestUrl = String(url)
