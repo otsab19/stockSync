@@ -1254,21 +1254,37 @@ function hasKnownPositionContainer(value: unknown): boolean {
 }
 
 function extractEtoroRows(payload: unknown): EtoroApiRow[] {
+  const dedupeByPositionId = (rows: EtoroApiRow[]) => {
+    const deduped: EtoroApiRow[] = []
+    const seenPositionIds = new Set<number>()
+
+    rows.forEach((row) => {
+      const positionId = getNumberValue(row, ["positionID", "PositionID", "positionId", "PositionId"])
+      if (positionId !== null) {
+        if (seenPositionIds.has(positionId)) return
+        seenPositionIds.add(positionId)
+      }
+      deduped.push(row)
+    })
+
+    return deduped
+  }
+
   if (Array.isArray(payload)) {
-    return payload.filter(isRecord)
+    return dedupeByPositionId(payload.filter(isRecord))
   }
 
   if (!isRecord(payload)) {
     throw new Error("eToro returned an unexpected response format.")
   }
 
-  const clientPortfolioRows = flattenClientPortfolioRows(payload.clientPortfolio)
+  const clientPortfolioRows = dedupeByPositionId(flattenClientPortfolioRows(payload.clientPortfolio))
 
   if (clientPortfolioRows.length > 0) {
     return clientPortfolioRows
   }
 
-  const topLevelRows = flattenClientPortfolioRows(payload)
+  const topLevelRows = dedupeByPositionId(flattenClientPortfolioRows(payload))
 
   if (topLevelRows.length > 0) {
     return topLevelRows

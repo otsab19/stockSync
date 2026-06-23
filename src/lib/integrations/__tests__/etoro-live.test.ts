@@ -589,6 +589,37 @@ describe("eToro live mapper", () => {
     expect(positions[0]?.shares).toBe(2)
   })
 
+  it("dedupes duplicate eToro position IDs before mapping", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [
+          {
+            positionID: 9001,
+            instrumentID: 1137,
+            symbolFull: "NVDA",
+            isBuy: true,
+            amount: 400,
+            openRate: 180,
+            currentRate: 182,
+          },
+          {
+            positionID: 9001,
+            instrumentID: 1137,
+            symbolFull: "NVDA",
+            isBuy: true,
+            amount: 400,
+            openRate: 180,
+            currentRate: 182,
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+  })
+
   it("maps PnL positions that only expose amount and nested unrealizedPnL", () => {
     const payload = {
       clientPortfolio: {

@@ -110,3 +110,55 @@ export function normalizeImportedHolding({
   }
 }
 
+function mergePositionGroup(group: PortfolioPosition[]): PortfolioPosition {
+  if (group.length === 1) {
+    return group[0]
+  }
+
+  const [first] = group
+  const totalShares = group.reduce((sum, position) => sum + position.shares, 0)
+  const weightedAvgPrice = totalShares > 0
+    ? group.reduce((sum, position) => sum + position.shares * position.avgPrice, 0) / totalShares
+    : first.avgPrice
+  const nativeTotalValue = group.reduce((sum, position) => sum + position.nativeTotalValue, 0)
+  const totalPL = group.reduce((sum, position) => sum + position.totalPL, 0)
+  const totalCostGbp = group.reduce((sum, position) => sum + position.avgPrice * position.shares * position.fxRateToGbp, 0)
+  const totalPLPercent = totalCostGbp > 0 ? (totalPL / totalCostGbp) * 100 : first.totalPLPercent
+  const recentChange = totalShares > 0
+    ? group.reduce((sum, position) => sum + position.recentChange * position.shares, 0) / totalShares
+    : first.recentChange
+
+  return normalizeImportedHolding({
+    broker: first.broker,
+    brokerLabel: first.brokerLabel,
+    ticker: first.ticker,
+    companyName: first.companyName,
+    shares: totalShares,
+    avgPrice: weightedAvgPrice,
+    livePrice: first.livePrice,
+    nativeCurrency: first.nativeCurrency,
+    assetType: first.assetType,
+    fxRateToGbp: first.fxRateToGbp,
+    nativeTotalValue,
+    totalPL,
+    totalPLPercent,
+    recentChange,
+  })
+}
+
+export function aggregatePositionsForStorage(positions: PortfolioPosition[]): PortfolioPosition[] {
+  const groups = new Map<string, PortfolioPosition[]>()
+
+  positions.forEach((position) => {
+    const key = `${position.broker}::${position.ticker}`
+    const group = groups.get(key)
+    if (group) {
+      group.push(position)
+      return
+    }
+    groups.set(key, [position])
+  })
+
+  return Array.from(groups.values()).map(mergePositionGroup)
+}
+

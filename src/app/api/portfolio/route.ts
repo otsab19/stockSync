@@ -2,21 +2,29 @@ import { NextResponse } from 'next/server';
 import { getBrokerProvider } from '@/lib/integrations/factory';
 import { createClient } from '@/utils/supabase/server';
 import { getConfiguredBackend } from '@/lib/backend/config';
+import { aggregatePositionsForStorage } from '@/lib/portfolio/position-normalizer';
 import type { BrokerId, PortfolioActivityEvent, PortfolioApiResponse, PortfolioPosition } from '@/types/portfolio';
 import { createServerPortfolioRepository } from '@/lib/portfolio/server-factory';
 
-type DeleteBuilder = PromiseLike<unknown> & {
+type DeleteBuilder = PromiseLike<{ error: Error | null }> & {
   eq(column: string, value: unknown): DeleteBuilder
+  not(column: string, operator: string, value: string): DeleteBuilder
 }
 
 type TableWriter = {
-  upsert(values: unknown, options?: unknown): PromiseLike<unknown>
-  insert(values: unknown): PromiseLike<unknown>
+  upsert(values: unknown, options?: unknown): PromiseLike<{ error: Error | null }>
+  insert(values: unknown): PromiseLike<{ error: Error | null }>
   delete(): DeleteBuilder
 }
 
 type SupabaseWriter = {
   from(table: string): TableWriter
+}
+
+async function assertNoSupabaseError(error: Error | null, context: string) {
+  if (error) {
+    throw new Error(`${context}: ${error.message}`)
+  }
 }
 
 type ProfileRow = {
@@ -35,7 +43,8 @@ async function recordBrokerSyncFailure(
   const now = new Date().toISOString()
   const message = error instanceof Error ? error.message : "Broker sync failed."
 
-  await writer.from("broker_connections").upsert(
+  await assertNoSupabaseError(
+    (await writer.from("broker_connections").upsert(
     {
       user_id: userId,
       broker,
@@ -48,9 +57,12 @@ async function recordBrokerSyncFailure(
       updated_at: now,
     },
     { onConflict: "user_id,broker,source_type" }
+  )).error,
+    "Failed to record broker sync failure"
   )
 
-  await writer.from("sync_runs").insert({
+  await assertNoSupabaseError(
+    (await writer.from("sync_runs").insert({
     user_id: userId,
     broker,
     trigger: "manual",
@@ -60,7 +72,9 @@ async function recordBrokerSyncFailure(
     started_at: now,
     finished_at: now,
     error_message: message,
-  })
+  })).error,
+    "Failed to record failed sync run"
+  )
 }
 
 async function recordBrokerSync(
@@ -71,8 +85,10 @@ async function recordBrokerSync(
   activity?: PortfolioActivityEvent[]
 ) {
   const now = new Date().toISOString()
+  const storedPositions = aggregatePositionsForStorage(positions)
 
-  await writer.from("broker_connections").upsert(
+  await assertNoSupabaseError(
+    (await writer.from("broker_connections").upsert(
     {
       user_id: userId,
       broker,
@@ -85,44 +101,67 @@ async function recordBrokerSync(
       updated_at: now,
     },
     { onConflict: "user_id,broker,source_type" }
+  )).error,
+    "Failed to record broker sync"
   )
 
-  await writer.from("sync_runs").insert({
+  await assertNoSupabaseError(
+    (await writer.from("sync_runs").insert({
     user_id: userId,
     broker,
     trigger: "manual",
     source_type: "broker_api",
     status: "succeeded",
-    positions_imported: positions.length,
+    positions_imported: storedPositions.length,
     started_at: now,
     finished_at: now,
-  })
+  })).error,
+    "Failed to record sync run"
+  )
 
-  await writer.from("positions").delete().eq("user_id", userId).eq("broker", broker)
-  if (positions.length > 0) {
-    await writer.from("positions").insert(
-      positions.map((position) => ({
-        user_id: userId,
-        broker: position.broker,
-        ticker: position.ticker,
-        company_name: position.companyName,
-        shares: position.shares,
-        avg_price: position.avgPrice,
-        live_price: position.livePrice,
-        native_currency: position.nativeCurrency,
-        fx_rate_to_gbp: position.fxRateToGbp,
-        total_value_gbp: position.normalizedTotalValueGbp,
-        total_pl: position.totalPL,
-        total_pl_percent: position.totalPLPercent,
-        updated_at: now,
-      }))
+  const positionRows = storedPositions.map((position) => ({
+    user_id: userId,
+    broker: position.broker,
+    ticker: position.ticker,
+    company_name: position.companyName,
+    shares: position.shares,
+    avg_price: position.avgPrice,
+    live_price: position.livePrice,
+    native_currency: position.nativeCurrency,
+    fx_rate_to_gbp: position.fxRateToGbp,
+    total_value_gbp: position.normalizedTotalValueGbp,
+    total_pl: position.totalPL,
+    total_pl_percent: position.totalPLPercent,
+    updated_at: now,
+  }))
+
+  if (positionRows.length > 0) {
+    await assertNoSupabaseError(
+      (await writer.from("positions").upsert(positionRows, { onConflict: "user_id,broker,ticker" })).error,
+      `Failed to store ${broker} positions`
+    )
+
+    const storedTickers = storedPositions.map((position) => position.ticker)
+    await assertNoSupabaseError(
+      (await writer.from("positions")
+        .delete()
+        .eq("user_id", userId)
+        .eq("broker", broker)
+        .not("ticker", "in", `(${storedTickers.join(",")})`)).error,
+      `Failed to remove stale ${broker} positions`
+    )
+  } else {
+    await assertNoSupabaseError(
+      (await writer.from("positions").delete().eq("user_id", userId).eq("broker", broker)).error,
+      "Failed to clear existing broker positions"
     )
   }
 
   if (activity) {
     if (activity.length > 0) {
       for (let index = 0; index < activity.length; index += 100) {
-        await writer.from("activity_events").upsert(
+        await assertNoSupabaseError(
+          (await writer.from("activity_events").upsert(
           activity.slice(index, index + 100).map((event) => ({
             user_id: userId,
             broker: event.broker,
@@ -138,6 +177,8 @@ async function recordBrokerSync(
             timestamp: event.timestamp,
           })),
           { onConflict: "user_id,broker,ticker,timestamp,event_type" }
+        )).error,
+          `Failed to store ${broker} activity`
         )
       }
     }
