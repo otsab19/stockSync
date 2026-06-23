@@ -36,6 +36,8 @@ type ActivitySortBy = "timestamp" | "ticker" | "amount" | "shares"
 const presetLabels: Record<ActivityDatePreset, string> = {
   today: "Today",
   yesterday: "Yesterday",
+  "this-week": "This week",
+  "this-month": "This month",
   "last-7d": "Last 7 days",
   "last-30d": "Last 30 days",
   custom: "Custom",

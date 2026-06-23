@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   buildPlPeriodSeries,
   buildSellPlLookup,
@@ -46,11 +46,39 @@ describe("activity view", () => {
     expect(filtered[0]?.id).toBe("a")
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it("defaults preset ranges to today", () => {
     const { start, end } = getDateRangeForPreset("today")
     expect(start.getHours()).toBe(0)
     expect(end.getHours()).toBe(23)
     expect(start.toDateString()).toBe(end.toDateString())
+  })
+
+  it("returns this week from Monday through today", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 5, 25, 12, 0, 0))
+
+    const { start, end } = getDateRangeForPreset("this-week")
+
+    expect(start.getDay()).toBe(1)
+    expect(start.getDate()).toBe(22)
+    expect(end.getDate()).toBe(25)
+    expect(end.getHours()).toBe(23)
+  })
+
+  it("returns this month from the first day through today", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 5, 25, 12, 0, 0))
+
+    const { start, end } = getDateRangeForPreset("this-month")
+
+    expect(start.getDate()).toBe(1)
+    expect(start.getMonth()).toBe(5)
+    expect(end.getDate()).toBe(25)
+    expect(end.getHours()).toBe(23)
   })
 
   it("maps eToro open and close legs to buy and sell", () => {

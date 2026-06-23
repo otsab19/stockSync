@@ -1,7 +1,7 @@
 import { buildTradeCycles } from "@/lib/dashboard/trade-cycles"
 import type { BrokerId, PortfolioActivityEvent } from "@/types/portfolio"
 
-export type ActivityDatePreset = "today" | "yesterday" | "last-7d" | "last-30d" | "custom"
+export type ActivityDatePreset = "today" | "yesterday" | "this-week" | "this-month" | "last-7d" | "last-30d" | "custom"
 export type PlGroupBy = "day" | "week" | "month" | "year"
 
 export type PlPeriodBucket = {
@@ -60,6 +60,10 @@ export function getDateRangeForPreset(preset: ActivityDatePreset) {
       yesterday.setDate(yesterday.getDate() - 1)
       return { start: startOfDay(yesterday), end: endOfDay(yesterday) }
     }
+    case "this-week":
+      return { start: startOfWeek(now), end: todayEnd }
+    case "this-month":
+      return { start: startOfMonth(now), end: todayEnd }
     case "last-7d": {
       const start = new Date(todayStart)
       start.setDate(start.getDate() - 6)
