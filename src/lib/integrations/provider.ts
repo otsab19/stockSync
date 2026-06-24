@@ -1,6 +1,7 @@
 import type { PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 import type { BrokerApiCredentials } from "@/types/integrations"
 import type { BrokerAccountSnapshot, BrokerSyncStats } from "@/types/broker-account"
+import type { ClosePositionRequest, MarketCandle, MarketCandleInterval, PendingBrokerOrder } from "@/types/pending-orders"
 import type { BrokerOrderResult, OrderCapability, OrderPreview, TradeOrderRequest } from "@/types/orders"
 
 export type BrokerInstrument = {
@@ -44,7 +45,10 @@ export interface BrokerProvider {
   getOrderCapabilities?(): OrderCapability
   previewOrder?(order: TradeOrderRequest, credentials?: string | BrokerApiCredentials): Promise<OrderPreview>
   placeOrder?(order: TradeOrderRequest, credentials?: string | BrokerApiCredentials): Promise<BrokerOrderResult>
-  cancelOrder?(brokerOrderId: string, credentials?: string | BrokerApiCredentials): Promise<BrokerOrderResult>
+  cancelOrder?(brokerOrderId: string, credentials?: string | BrokerApiCredentials, options?: { cancelKind?: PendingBrokerOrder["cancelKind"] }): Promise<BrokerOrderResult>
+  getPendingOrders?(credentials?: string | BrokerApiCredentials): Promise<PendingBrokerOrder[]>
+  closePosition?(request: ClosePositionRequest, credentials?: string | BrokerApiCredentials): Promise<BrokerOrderResult>
+  getInstrumentCandles?(instrumentId: string, options: { interval?: MarketCandleInterval; count?: number }, credentials?: string | BrokerApiCredentials): Promise<MarketCandle[]>
   importFromCsv?(csvText: string): Promise<PortfolioPosition[]>
 }
 

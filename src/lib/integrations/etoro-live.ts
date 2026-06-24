@@ -4,6 +4,7 @@ import { buildOrderPreview } from "@/lib/orders/validation"
 import type { BrokerInstrument, BrokerInstrumentQuote } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
 import type { BrokerOrderResult, OrderCapability, TradeOrderRequest } from "@/types/orders"
+import type { ClosePositionRequest, MarketCandle, MarketCandleInterval, PendingBrokerOrder, PendingOrderCancelKind } from "@/types/pending-orders"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 import type { Json } from "@/types/supabase"
 
@@ -1575,7 +1576,7 @@ function mapEtoroRowToPosition(
       ? unrealizedPlNative
       : unrealizedPlNative * (fxRateToGbp ?? USD_TO_GBP_FALLBACK_RATE)
 
-  return normalizeImportedHolding({
+  const position = normalizeImportedHolding({
     broker: "etoro",
     brokerLabel: "eToro",
     externalPositionId,
@@ -1591,6 +1592,12 @@ function mapEtoroRowToPosition(
     totalPL,
     recentChange,
   })
+  const resolvedInstrumentId = getEtoroInstrumentId(row)
+
+  return {
+    ...position,
+    brokerInstrumentId: resolvedInstrumentId !== null ? String(resolvedInstrumentId) : undefined,
+  }
 }
 
 function normalizeEtoroCredentials(credentials?: string | BrokerApiCredentials) {
@@ -1668,7 +1675,7 @@ export function getEtoroOrderCapabilities(): OrderCapability {
     supportsValueOrders: true,
     supportsStopLoss: true,
     supportsTakeProfit: true,
-    supportsCancel: false,
+    supportsCancel: true,
   }
 }
 
@@ -2156,5 +2163,254 @@ export async function fetchEtoroActivityFromApi(credentials?: string | BrokerApi
   logger.info({ broker: "etoro", activityEvents: activity.length }, "Mapped eToro trade history into activity events")
 
   return activity
+}
+
+const ETORO_PENDING_ORDER_CONTAINER_KEYS = [
+  "ordersForOpen",
+  "OrdersForOpen",
+  "ordersForClose",
+  "OrdersForClose",
+  "limitOrders",
+  "LimitOrders",
+  "marketOrders",
+  "MarketOrders",
+  "pendingOrders",
+  "PendingOrders",
+] as const
+
+function isPendingOrderLikeRow(row: EtoroApiRow) {
+  return Boolean(
+    getIdentifierValue(row, ["orderId", "OrderId", "OrderID", "id", "ID"])
+    && (getEtoroInstrumentId(row) !== null || getStringValue(row, ["ticker", "symbol", "instrument.ticker"]))
+  )
+}
+
+function getIdentifierValue(row: EtoroApiRow, keys: string[]) {
+  for (const key of keys) {
+    const value = key.includes(".") ? getNestedValue(row, key) : row[key]
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value)
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim()
+      if (trimmed) return trimmed
+    }
+  }
+
+  return null
+}
+
+function collectPendingOrderRows(clientPortfolio: unknown): EtoroApiRow[] {
+  if (!isRecord(clientPortfolio)) {
+    return []
+  }
+
+  const rows: EtoroApiRow[] = []
+  const seen = new Set<EtoroApiRow>()
+
+  for (const key of ETORO_PENDING_ORDER_CONTAINER_KEYS) {
+    const candidate = clientPortfolio[key]
+    if (!Array.isArray(candidate)) continue
+
+    candidate.filter(isRecord).forEach((row) => {
+      if (!isPendingOrderLikeRow(row) || seen.has(row)) return
+      seen.add(row)
+      rows.push(row)
+    })
+  }
+
+  return rows
+}
+
+function mapEtoroPendingOrderRow(row: EtoroApiRow): PendingBrokerOrder | null {
+  const brokerOrderId = getIdentifierValue(row, ["orderId", "OrderId", "OrderID", "id", "ID"])
+  const instrumentId = getEtoroInstrumentId(row)
+  const ticker = getStringValue(row, [
+    "instrument.ticker",
+    "instrument.symbol",
+    "ticker",
+    "symbol",
+    "symbolFull",
+    "SymbolFull",
+  ]) ?? (instrumentId !== null ? String(instrumentId) : null)
+  const quantity = getNumberValue(row, ["amountInUnits", "AmountInUnits", "units", "Units", "amount", "Amount"])
+  const limitPrice = getNumberValue(row, ["rate", "Rate", "limitRate", "LimitRate"])
+  const stopPrice = getNumberValue(row, ["stopRate", "StopRate"])
+  const createdAt = getStringValue(row, ["openDateTime", "OpenDateTime", "createdAt", "CreatedAt"])
+  const isBuy = row.IsBuy === true || row.isBuy === true || String(row.IsBuy ?? row.isBuy).toLowerCase() === "true"
+  const orderTypeRaw = getStringValue(row, ["orderType", "OrderType", "type", "Type"])?.toLowerCase() ?? ""
+
+  if (!brokerOrderId || !ticker) {
+    return null
+  }
+
+  const orderType = orderTypeRaw.includes("limit") || limitPrice !== null
+    ? "limit" as const
+    : orderTypeRaw.includes("mit")
+      ? "mit" as const
+      : "market" as const
+
+  return {
+    broker: "etoro",
+    brokerLabel: "eToro",
+    brokerOrderId,
+    ticker: normalizeTickerSymbol(ticker),
+    companyName: getStringValue(row, ["instrumentDisplayName", "InstrumentDisplayName", "instrument.name", "name"]) ?? ticker,
+    side: isBuy ? "buy" : "sell",
+    orderType,
+    quantity,
+    limitPrice,
+    stopPrice,
+    createdAt,
+    cancelKind: orderType === "limit" ? "limit" : "open_market",
+  }
+}
+
+async function deleteEtoroJson<T>(
+  baseUrl: string,
+  path: string,
+  headers: ReturnType<typeof buildEtoroHeaders>
+): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "DELETE",
+    cache: "no-store",
+    headers,
+  })
+
+  const responseText = await response.text()
+  const parsedBody = responseText.trim() ? JSON.parse(responseText) as T : ({} as T)
+
+  if (!response.ok) {
+    const detail = responseText.trim()
+      ? ` eToro responded with ${response.status}: ${responseText.trim().slice(0, 240)}`
+      : ` eToro responded with ${response.status}.`
+
+    throw new Error(`Failed to cancel eToro order.${detail}`)
+  }
+
+  return parsedBody
+}
+
+export async function fetchEtoroPendingOrdersFromApi(credentials?: string | BrokerApiCredentials): Promise<PendingBrokerOrder[]> {
+  const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    return []
+  }
+
+  const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
+  const headers = buildEtoroHeaders(apiKey, apiSecret)
+  const portfolioPath = process.env.ETORO_PORTFOLIO_PATH?.trim() || DEFAULT_ETORO_REAL_PORTFOLIO_PATH
+  const payload = await fetchEtoroJson<EtoroApiRow>(baseUrl, portfolioPath, headers)
+  const clientPortfolio = isRecord(payload.clientPortfolio) ? payload.clientPortfolio : payload
+
+  return collectPendingOrderRows(clientPortfolio)
+    .map(mapEtoroPendingOrderRow)
+    .filter((order): order is PendingBrokerOrder => Boolean(order))
+}
+
+export async function cancelEtoroOrder(
+  brokerOrderId: string,
+  credentials?: string | BrokerApiCredentials,
+  options?: { cancelKind?: PendingOrderCancelKind }
+): Promise<BrokerOrderResult> {
+  const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
+  const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
+  const headers = buildEtoroHeaders(apiKey, apiSecret, crypto.randomUUID())
+  const cancelKind = options?.cancelKind ?? "open_market"
+  const path = cancelKind === "limit"
+    ? `/api/v1/trading/execution/limit-orders/${encodeURIComponent(brokerOrderId)}`
+    : cancelKind === "close"
+      ? `/api/v1/trading/execution/market-close-orders/${encodeURIComponent(brokerOrderId)}`
+      : `/api/v1/trading/execution/market-open-orders/${encodeURIComponent(brokerOrderId)}`
+
+  const rawResponse = await deleteEtoroJson<EtoroApiRow>(baseUrl, path, headers)
+  const jsonResponse = JSON.parse(JSON.stringify(rawResponse)) as Json
+
+  return {
+    brokerOrderId,
+    status: "accepted",
+    rawResponse: jsonResponse,
+  }
+}
+
+export async function closeEtoroPositionByMarket(
+  request: ClosePositionRequest,
+  credentials?: string | BrokerApiCredentials
+): Promise<BrokerOrderResult> {
+  const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
+  const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
+  const headers = buildEtoroHeaders(apiKey, apiSecret, crypto.randomUUID())
+  const positionId = request.positionId.replace(/^position:/, "")
+  const instrumentId = Number(request.instrumentId)
+
+  const body: Record<string, number> = {
+    InstrumentId: Number.isFinite(instrumentId) ? instrumentId : Number(positionId),
+  }
+
+  if (request.unitsToClose !== undefined && request.unitsToClose !== null) {
+    body.UnitsToDeduct = request.unitsToClose
+  }
+
+  const rawResponse = await postEtoroJson<EtoroApiRow>(
+    baseUrl,
+    `/api/v1/trading/execution/market-close-orders/positions/${encodeURIComponent(positionId)}`,
+    headers,
+    body
+  )
+  const brokerOrderId = getStringValue(rawResponse, ["orderForClose.orderId", "orderId", "OrderID", "id"]) ?? positionId
+  const jsonResponse = JSON.parse(JSON.stringify(rawResponse)) as Json
+
+  return {
+    brokerOrderId,
+    status: "submitted",
+    rawResponse: jsonResponse,
+  }
+}
+
+export async function fetchEtoroCandlesFromApi(
+  instrumentId: string,
+  options: { interval?: MarketCandleInterval; count?: number } = {},
+  credentials?: string | BrokerApiCredentials
+): Promise<MarketCandle[]> {
+  const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    return []
+  }
+
+  const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
+  const headers = buildEtoroHeaders(apiKey, apiSecret)
+  const interval = options.interval ?? "OneDay"
+  const count = Math.min(Math.max(options.count ?? 30, 1), 120)
+  const path = `/api/v1/market-data/instruments/${encodeURIComponent(instrumentId)}/history/candles/desc/${interval}/${count}`
+  const payload = await fetchEtoroJson<EtoroApiRow>(baseUrl, path, headers)
+  const candleGroups = Array.isArray(payload.candles) ? payload.candles : []
+  const candles: MarketCandle[] = []
+
+  for (const group of candleGroups) {
+    if (!isRecord(group)) continue
+    const groupCandles = Array.isArray(group.candles) ? group.candles : Array.isArray(group.Candles) ? group.Candles : []
+
+    for (const candle of groupCandles) {
+      if (!isRecord(candle)) continue
+      const timestamp = getStringValue(candle, ["from", "From", "timestamp", "Timestamp", "date", "Date"])
+      const open = getNumberValue(candle, ["open", "Open"])
+      const high = getNumberValue(candle, ["high", "High"])
+      const low = getNumberValue(candle, ["low", "Low"])
+      const close = getNumberValue(candle, ["close", "Close"])
+      const volume = getNumberValue(candle, ["volume", "Volume"]) ?? 0
+
+      if (!timestamp || open === null || high === null || low === null || close === null) {
+        continue
+      }
+
+      candles.push({ timestamp, open, high, low, close, volume })
+    }
+  }
+
+  return candles.sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime())
 }
 

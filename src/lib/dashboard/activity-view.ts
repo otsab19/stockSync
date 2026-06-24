@@ -109,9 +109,13 @@ export function dedupeActivityEvents(activity: PortfolioActivityEvent[]) {
 }
 
 export function getActivitySide(event: PortfolioActivityEvent): "buy" | "sell" {
-  if (event.broker === "etoro" && event.orderType === "Open") return "buy"
-  if (event.broker === "etoro" && event.orderType === "Close") return "sell"
-  return event.type
+  if (event.type === "buy" || event.type === "sell") {
+    if (event.broker === "etoro" && event.orderType === "Open") return "buy"
+    if (event.broker === "etoro" && event.orderType === "Close") return "sell"
+    return event.type
+  }
+
+  return "buy"
 }
 
 function toLocalDateKey(value: string | Date) {
@@ -263,6 +267,7 @@ export function splitActivityBySide(activity: PortfolioActivityEvent[]) {
   const sells: PortfolioActivityEvent[] = []
 
   activity.forEach((event) => {
+    if (event.type !== "buy" && event.type !== "sell") return
     if (getActivitySide(event) === "buy") buys.push(event)
     else sells.push(event)
   })

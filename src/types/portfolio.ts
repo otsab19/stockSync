@@ -4,7 +4,7 @@ export type BrokerId = "t212" | "etoro" | (string & {})
 export type AssetType = "stock" | "etf" | "crypto"
 export type AlertStatus = "stable" | "near-alert" | "triggered"
 export type CurrencyMode = "native" | "normalized_gbp"
-export type PortfolioActivityType = "buy" | "sell"
+export type PortfolioActivityType = "buy" | "sell" | "dividend" | "deposit" | "withdrawal" | "fee" | "fx"
 
 export type PortfolioPosition = {
   id: string
@@ -26,6 +26,7 @@ export type PortfolioPosition = {
   alertDelta: number
   alertStatus: AlertStatus
   recentChange: number
+  brokerInstrumentId?: string
 }
 
 export type PortfolioBackend = "supabase" | "browser"

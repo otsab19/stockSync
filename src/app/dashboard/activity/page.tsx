@@ -31,6 +31,7 @@ import type { PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portf
 
 type ActivityDashboardState = "loading" | "ready" | "setup_required" | "unauthorized" | "client_only" | "error"
 type ActivityGroupMode = "broker" | "side"
+type ActivityCategory = "all" | "trades" | "dividends" | "cash"
 type ActivitySortBy = "timestamp" | "ticker" | "amount" | "shares"
 
 const presetLabels: Record<ActivityDatePreset, string> = {
@@ -86,6 +87,13 @@ function formatTradePrice(value: number, currency: "GBP" | "USD") {
 
 function shouldShowCompanyName(event: PortfolioActivityEvent) {
   return event.companyName.trim().toUpperCase() !== event.ticker.trim().toUpperCase()
+}
+
+function filterActivityByCategory(activity: PortfolioActivityEvent[], category: ActivityCategory) {
+  if (category === "all") return activity
+  if (category === "trades") return activity.filter((event) => event.type === "buy" || event.type === "sell")
+  if (category === "dividends") return activity.filter((event) => event.type === "dividend")
+  return activity.filter((event) => ["deposit", "withdrawal", "fee", "fx"].includes(event.type))
 }
 
 function filterAndSortActivity(activity: PortfolioActivityEvent[], searchQuery: string, sortBy: ActivitySortBy) {
@@ -276,6 +284,7 @@ export default function DashboardActivityPage() {
   const [groupMode, setGroupMode] = useState<ActivityGroupMode>("broker")
   const [searchQuery, setSearchQuery] = useState("")
   const [sortBy, setSortBy] = useState<ActivitySortBy>("timestamp")
+  const [activityCategory, setActivityCategory] = useState<ActivityCategory>("all")
   const [customStart, setCustomStart] = useState(() => formatDateInputValue(new Date()))
   const [customEnd, setCustomEnd] = useState(() => formatDateInputValue(new Date()))
 
@@ -330,8 +339,8 @@ export default function DashboardActivityPage() {
     [dateRange.end, dateRange.start, rawActivity]
   )
   const periodActivity = useMemo(
-    () => filterAndSortActivity(rangeActivity, searchQuery, sortBy),
-    [rangeActivity, searchQuery, sortBy]
+    () => filterAndSortActivity(filterActivityByCategory(rangeActivity, activityCategory), searchQuery, sortBy),
+    [activityCategory, rangeActivity, searchQuery, sortBy]
   )
   const summary = useMemo(
     () => summarizeActivityPeriod(periodActivity, sellPlLookup),
@@ -441,6 +450,25 @@ export default function DashboardActivityPage() {
               </label>
             </div>
           ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Category</span>
+            {([
+              ["all", "All"],
+              ["trades", "Trades"],
+              ["dividends", "Dividends"],
+              ["cash", "Cash movements"],
+            ] as const).map(([value, label]) => (
+              <Button
+                key={value}
+                size="sm"
+                variant={activityCategory === value ? "default" : "outline"}
+                className={activityCategory === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                onClick={() => setActivityCategory(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">Group by</span>
             {(Object.keys(groupModeLabels) as ActivityGroupMode[]).map((value) => (

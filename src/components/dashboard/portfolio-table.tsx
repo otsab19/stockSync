@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { CurrencyMode, PortfolioPosition } from "@/types/portfolio"
 import { formatMoney, getAlertBadgeVariant, getDisplayCurrency, getDisplayProfit, getDisplayValue } from "@/lib/dashboard/filter-engine"
+import { PositionDetailPanel } from "@/components/dashboard/position-detail-panel"
 
 interface PortfolioTableProps {
   portfolio: PortfolioPosition[]
@@ -160,18 +161,7 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
                                     exit={{ height: 0, opacity: 0 }}
                                     className="overflow-hidden"
                                   >
-                                    <div className="grid gap-3 border-t border-white/8 bg-white/[0.02] px-4 py-3 text-xs text-muted-foreground sm:grid-cols-2">
-                                      <div className="space-y-1">
-                                        <p>Alert gap: £{position.alertDelta.toFixed(2)}</p>
-                                        <p>Type: {position.assetType.toUpperCase()}</p>
-                                        <p>Recent: {position.recentChange >= 0 ? "+" : ""}{position.recentChange.toFixed(2)}%</p>
-                                      </div>
-                                      <div className="space-y-1">
-                                        <p>Value: {formatMoney(getDisplayValue(position, currencyMode), displayCurrency)}</p>
-                                        <p>P/L: {position.totalPL >= 0 ? "+" : ""}{formatMoney(getDisplayProfit(position, currencyMode), displayCurrency)} ({position.totalPLPercent.toFixed(1)}%)</p>
-                                        <p>FX: {position.fxRateToGbp.toFixed(4)}</p>
-                                      </div>
-                                    </div>
+                                    <PositionDetailPanel position={position} />
                                   </motion.div>
                                 </AnimatePresence>
                               </TableCell>

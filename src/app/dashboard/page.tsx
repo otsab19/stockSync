@@ -5,6 +5,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { ChartCandlestick, RefreshCw } from "lucide-react"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
 import { BrokerAccountStrip } from "@/components/dashboard/broker-account-strip"
+import { CrossBrokerTickerView } from "@/components/dashboard/cross-broker-ticker-view"
+import { PendingOrdersPanel } from "@/components/dashboard/pending-orders-panel"
 import { BrokerFreshnessList, FreshnessBadge } from "@/components/dashboard/freshness-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -300,6 +302,8 @@ function DashboardContent() {
       ) : (
         <>
           <BrokerAccountStrip meta={portfolioResponse?.meta} portfolio={portfolio} />
+          <PendingOrdersPanel />
+          <CrossBrokerTickerView portfolio={portfolio} />
 
           <DashboardTodaySummary summary={todaySummary} activityCount={todayActivity.length} biggestMovers={biggestMovers} />
 

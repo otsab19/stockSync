@@ -1,7 +1,11 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importEtoroPortfolioFromCsv } from "@/lib/integrations/etoro-csv"
 import {
+  cancelEtoroOrder,
+  closeEtoroPositionByMarket,
+  fetchEtoroCandlesFromApi,
   fetchEtoroInstrumentQuoteFromApi,
+  fetchEtoroPendingOrdersFromApi,
   fetchEtoroPortfolioFromApi,
   fetchEtoroSyncDataFromApi,
   getEtoroOrderCapabilities,
@@ -56,6 +60,18 @@ export const etoroProvider: BrokerProvider = {
   },
   async placeOrder(order, credentials) {
     return placeEtoroOrder(order, credentials)
+  },
+  async cancelOrder(brokerOrderId, credentials, options) {
+    return cancelEtoroOrder(brokerOrderId, credentials, options)
+  },
+  async getPendingOrders(credentials) {
+    return fetchEtoroPendingOrdersFromApi(credentials)
+  },
+  async closePosition(request, credentials) {
+    return closeEtoroPositionByMarket(request, credentials)
+  },
+  async getInstrumentCandles(instrumentId, options, credentials) {
+    return fetchEtoroCandlesFromApi(instrumentId, options, credentials)
   },
   async importFromCsv(csvText: string) {
     return importEtoroPortfolioFromCsv(csvText)

@@ -4,6 +4,7 @@ import { buildOrderPreview } from "@/lib/orders/validation"
 import type { BrokerInstrument } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
 import type { BrokerOrderResult, OrderCapability, TradeOrderRequest } from "@/types/orders"
+import type { PendingBrokerOrder, PendingOrderCancelKind } from "@/types/pending-orders"
 import type { AssetType, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 import type { Json } from "@/types/supabase"
 
@@ -289,7 +290,7 @@ function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | 
         ? explicitTotalPlValue * (fxRateToGbp ?? USD_TO_GBP_FALLBACK_RATE)
         : undefined
 
-  return normalizeImportedHolding({
+  const position = normalizeImportedHolding({
     broker: "t212",
     brokerLabel: "Trading 212",
     externalPositionId,
@@ -309,6 +310,11 @@ function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | 
         : explicitTotalPlPercentValue,
     recentChange,
   })
+
+  return {
+    ...position,
+    brokerInstrumentId: normalizedTicker,
+  }
 }
 
 function normalizeTrading212Credentials(credentials?: string | BrokerApiCredentials) {
@@ -396,7 +402,7 @@ export function getTrading212OrderCapabilities(): OrderCapability {
     supportsValueOrders: false,
     supportsStopLoss: false,
     supportsTakeProfit: false,
-    supportsCancel: false,
+    supportsCancel: true,
   }
 }
 
@@ -447,6 +453,218 @@ export async function placeTrading212Order(order: TradeOrderRequest, credentials
     status: "submitted",
     rawResponse: jsonResponse,
   }
+}
+
+async function deleteTrading212Json<T>(path: string, apiKey: string, apiSecret: string): Promise<T> {
+  const normalizedPath = normalizeTrading212Path(path)
+  const requestUrl = /^https?:\/\//i.test(normalizedPath)
+    ? normalizedPath
+    : `${formatTrading212BaseUrl()}${normalizedPath}`
+
+  const response = await fetch(requestUrl, {
+    method: "DELETE",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      Authorization: formatTrading212AuthHeader(apiKey, apiSecret),
+    },
+  })
+
+  const responseText = await response.text()
+  const parsedBody = responseText.trim() ? JSON.parse(responseText) as T : ({} as T)
+
+  if (!response.ok) {
+    const detail = responseText.trim()
+      ? ` Trading 212 responded with ${response.status}: ${responseText.trim().slice(0, 240)}`
+      : ` Trading 212 responded with ${response.status}.`
+
+    throw new Error(`Failed to cancel Trading 212 order.${detail}`)
+  }
+
+  return parsedBody
+}
+
+function mapTrading212PendingOrderRow(row: Trading212ApiRow): PendingBrokerOrder | null {
+  const brokerOrderId = getIdentifierValue(row, ["id", "orderId", "order.id"])
+  const ticker = getStringValue(row, ["instrument.ticker", "ticker", "symbol", "instrumentCode"])
+  const quantity = getNumberValue(row, ["quantity", "filledQuantity", "order.quantity"])
+  const limitPrice = getNumberValue(row, ["limitPrice", "order.limitPrice"])
+  const stopPrice = getNumberValue(row, ["stopPrice", "order.stopPrice"])
+  const createdAt = getStringValue(row, ["createdAt", "order.createdAt", "timestamp"])
+  const orderTypeRaw = getStringValue(row, ["type", "orderType", "order.type"])?.toLowerCase() ?? "unknown"
+  const orderType = orderTypeRaw.includes("stop_limit") || orderTypeRaw.includes("stop limit")
+    ? "stop_limit" as const
+    : orderTypeRaw.includes("stop")
+      ? "stop" as const
+      : orderTypeRaw.includes("limit")
+        ? "limit" as const
+        : orderTypeRaw.includes("market")
+          ? "market" as const
+          : "unknown" as const
+
+  if (!brokerOrderId || !ticker) {
+    return null
+  }
+
+  const signedQuantity = quantity ?? 0
+
+  return {
+    broker: "t212",
+    brokerLabel: "Trading 212",
+    brokerOrderId,
+    ticker: normalizeTickerSymbol(ticker),
+    companyName: getStringValue(row, ["instrument.name", "name", "instrumentName"]) ?? ticker,
+    side: signedQuantity < 0 ? "sell" : "buy",
+    orderType,
+    quantity: quantity === null ? null : Math.abs(quantity),
+    limitPrice,
+    stopPrice,
+    createdAt,
+    cancelKind: "generic",
+  }
+}
+
+function mapTrading212DividendRowToActivity(row: Trading212ApiRow): PortfolioActivityEvent | null {
+  const timestamp = getStringValue(row, ["paidOn", "date", "timestamp", "createdAt"])
+  const amount = getNumberValue(row, ["amount", "grossAmount", "netAmount", "value"])
+  const ticker = getStringValue(row, ["instrument.ticker", "ticker", "symbol"]) ?? "CASH"
+  const currency = normalizeCurrency(getStringValue(row, ["currency", "instrument.currency"])) ?? getConfiguredTrading212AccountCurrency() ?? "GBP"
+
+  if (!timestamp || amount === null) {
+    return null
+  }
+
+  const grossAmountGbp = convertTrading212WalletAmountToGbp(amount, currency, currency, null, null)
+
+  return {
+    id: `t212:dividend:${timestamp}:${ticker}:${amount}`,
+    timestamp,
+    broker: "t212",
+    brokerLabel: "Trading 212",
+    ticker: normalizeTickerSymbol(ticker),
+    companyName: getStringValue(row, ["instrument.name", "name"]) ?? ticker,
+    type: "dividend",
+    shares: 0,
+    price: 0,
+    nativeCurrency: currency,
+    grossAmount: amount,
+    grossAmountGbp,
+    orderType: "Dividend",
+  }
+}
+
+function mapTrading212TransactionRowToActivity(row: Trading212ApiRow): PortfolioActivityEvent | null {
+  const timestamp = getStringValue(row, ["dateTime", "timestamp", "createdAt", "date"])
+  const amount = getNumberValue(row, ["amount", "value", "netAmount"])
+  const currency = normalizeCurrency(getStringValue(row, ["currency"])) ?? getConfiguredTrading212AccountCurrency() ?? "GBP"
+  const typeRaw = getStringValue(row, ["type", "transactionType", "reference"])?.toLowerCase() ?? ""
+
+  if (!timestamp || amount === null) {
+    return null
+  }
+
+  const activityType = typeRaw.includes("withdraw")
+    ? "withdrawal" as const
+    : typeRaw.includes("deposit") || typeRaw.includes("top up") || typeRaw.includes("topup")
+      ? "deposit" as const
+      : typeRaw.includes("fee") || typeRaw.includes("charge")
+        ? "fee" as const
+        : typeRaw.includes("fx") || typeRaw.includes("currency")
+          ? "fx" as const
+          : amount >= 0
+            ? "deposit" as const
+            : "withdrawal" as const
+
+  const grossAmountGbp = convertTrading212WalletAmountToGbp(Math.abs(amount), currency, currency, null, null)
+
+  return {
+    id: `t212:txn:${timestamp}:${typeRaw}:${amount}`,
+    timestamp,
+    broker: "t212",
+    brokerLabel: "Trading 212",
+    ticker: "CASH",
+    companyName: typeRaw || "Cash movement",
+    type: activityType,
+    shares: 0,
+    price: 0,
+    nativeCurrency: currency,
+    grossAmount: Math.abs(amount),
+    grossAmountGbp,
+    orderType: typeRaw || "Transaction",
+  }
+}
+
+export async function fetchTrading212PendingOrdersFromApi(credentials?: string | BrokerApiCredentials): Promise<PendingBrokerOrder[]> {
+  const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    return []
+  }
+
+  const payload = await fetchTrading212Json<Trading212ApiResponse>("/equity/orders", apiKey, apiSecret)
+  return extractTrading212Rows(payload)
+    .map(mapTrading212PendingOrderRow)
+    .filter((order): order is PendingBrokerOrder => Boolean(order))
+}
+
+export async function cancelTrading212Order(
+  brokerOrderId: string,
+  credentials?: string | BrokerApiCredentials,
+  _options?: { cancelKind?: PendingOrderCancelKind }
+): Promise<BrokerOrderResult> {
+  const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
+  const rawResponse = await deleteTrading212Json<Trading212ApiRow>(`/equity/orders/${encodeURIComponent(brokerOrderId)}`, apiKey, apiSecret)
+  const jsonResponse = JSON.parse(JSON.stringify(rawResponse)) as Json
+
+  return {
+    brokerOrderId,
+    status: "accepted",
+    rawResponse: jsonResponse,
+  }
+}
+
+async function fetchTrading212PaginatedHistory(
+  initialPath: string,
+  apiKey: string,
+  apiSecret: string,
+  maxPages = 3
+) {
+  const items: Trading212ApiRow[] = []
+  let nextPath: string | null = initialPath
+  let pagesLoaded = 0
+
+  while (nextPath && pagesLoaded < maxPages) {
+    const historyPayload: Trading212HistoryResponse = await fetchTrading212Json(nextPath, apiKey, apiSecret)
+    pagesLoaded += 1
+    items.push(...(historyPayload.items ?? []).filter(isRecord))
+    nextPath = typeof historyPayload.nextPagePath === "string" && historyPayload.nextPagePath.trim()
+      ? historyPayload.nextPagePath
+      : null
+
+    if (nextPath && pagesLoaded < maxPages) {
+      await new Promise((resolve) => setTimeout(resolve, TRADING212_HISTORY_PAGE_DELAY_MS))
+    }
+  }
+
+  return items
+}
+
+export async function fetchTrading212CashActivityFromApi(credentials?: string | BrokerApiCredentials): Promise<PortfolioActivityEvent[]> {
+  const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    return []
+  }
+
+  const [dividendRows, transactionRows] = await Promise.all([
+    fetchTrading212PaginatedHistory("/equity/history/dividends?limit=50", apiKey, apiSecret, 2).catch(() => []),
+    fetchTrading212PaginatedHistory("/equity/history/transactions?limit=50", apiKey, apiSecret, 2).catch(() => []),
+  ])
+
+  return [
+    ...dividendRows.map(mapTrading212DividendRowToActivity).filter((event): event is PortfolioActivityEvent => Boolean(event)),
+    ...transactionRows.map(mapTrading212TransactionRowToActivity).filter((event): event is PortfolioActivityEvent => Boolean(event)),
+  ]
 }
 
 function normalizeTrading212ActivityType(row: Trading212ApiRow, quantity: number) {
@@ -665,7 +883,14 @@ export async function fetchTrading212AccountSummaryFromApi(credentials?: string 
 
 export async function fetchTrading212SyncDataFromApi(credentials?: string | BrokerApiCredentials) {
   const positions = await fetchTrading212PortfolioFromApi(credentials)
-  const activity = await fetchTrading212ActivityFromApi(credentials)
+  const [tradeActivity, cashActivity] = await Promise.all([
+    fetchTrading212ActivityFromApi(credentials),
+    fetchTrading212CashActivityFromApi(credentials).catch((error) => {
+      logger.warn({ broker: "t212", error: getErrorLogDetails(error) }, "Trading 212 cash activity sync skipped")
+      return [] as PortfolioActivityEvent[]
+    }),
+  ])
+  const activity = [...tradeActivity, ...cashActivity]
   const accountSnapshot = await fetchTrading212AccountSummaryFromApi(credentials)
 
   return {

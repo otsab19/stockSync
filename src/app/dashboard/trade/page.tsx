@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { AlertTriangle, RefreshCw, Search, ShieldCheck } from "lucide-react"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
+import { PendingOrdersPanel } from "@/components/dashboard/pending-orders-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -206,6 +207,8 @@ export default function TradePage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <PendingOrdersPanel />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
         <Card>

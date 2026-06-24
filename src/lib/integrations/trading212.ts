@@ -1,7 +1,9 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importTrading212PortfolioFromCsv } from "@/lib/integrations/trading212-csv"
 import {
+  cancelTrading212Order,
   fetchTrading212PortfolioFromApi,
+  fetchTrading212PendingOrdersFromApi,
   fetchTrading212SyncDataFromApi,
   getTrading212OrderCapabilities,
   mapTrading212AccountSummary,
@@ -61,6 +63,12 @@ export const trading212Provider: BrokerProvider = {
   },
   async placeOrder(order, credentials) {
     return placeTrading212Order(order, credentials)
+  },
+  async cancelOrder(brokerOrderId, credentials, options) {
+    return cancelTrading212Order(brokerOrderId, credentials, options)
+  },
+  async getPendingOrders(credentials) {
+    return fetchTrading212PendingOrdersFromApi(credentials)
   },
   async importFromCsv(csvText: string) {
     return importTrading212PortfolioFromCsv(csvText)
