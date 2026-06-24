@@ -271,6 +271,9 @@ function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | 
   }
 
   const resolvedCompanyName = companyName ?? ticker
+  const normalizedTicker = normalizeTickerSymbol(ticker)
+  const rowPositionId = getNumberValue(row, ["positionId", "PositionId", "id", "Id"])
+  const externalPositionId = rowPositionId !== null ? `position:${rowPositionId}` : `ticker:${normalizedTicker}`
   const nativeTotalValue = shares * livePrice
   const walletValueIsGbp = walletCurrency === "GBP" && currentValue !== null
   const fxRateToGbp = walletValueIsGbp && nativeTotalValue > 0
@@ -289,6 +292,7 @@ function mapTrading212RowToPosition(row: Trading212ApiRow): PortfolioPosition | 
   return normalizeImportedHolding({
     broker: "t212",
     brokerLabel: "Trading 212",
+    externalPositionId,
     ticker,
     companyName: resolvedCompanyName,
     shares,
@@ -625,6 +629,55 @@ export async function fetchTrading212PortfolioFromApi(credentials?: string | Bro
   logger.info({ broker: "t212" }, "Starting Trading 212 portfolio sync")
   const payload = await fetchTrading212Json<Trading212ApiResponse>("/equity/positions", apiKey, apiSecret)
   return mapTrading212PortfolioResponse(payload)
+}
+
+export function mapTrading212AccountSummary(payload: unknown): import("@/types/broker-account").BrokerAccountSnapshot | null {
+  if (!isRecord(payload)) {
+    return null
+  }
+
+  const cash = isRecord(payload.cash) ? payload.cash : null
+  const investments = isRecord(payload.investments) ? payload.investments : null
+  const currency = normalizeCurrency(getStringValue(payload, ["currency"])) ?? "GBP"
+
+  return {
+    broker: "t212",
+    currency,
+    availableCash: cash ? getNumberValue(cash, ["availableToTrade"]) : null,
+    investedAmount: investments ? getNumberValue(investments, ["totalCost"]) : null,
+    totalEquity: getNumberValue(payload, ["totalValue"]),
+    holdingsValue: investments ? getNumberValue(investments, ["currentValue"]) : null,
+    unrealizedPl: investments ? getNumberValue(investments, ["unrealizedProfitLoss"]) : null,
+    realizedPl: investments ? getNumberValue(investments, ["realizedProfitLoss"]) : null,
+  }
+}
+
+export async function fetchTrading212AccountSummaryFromApi(credentials?: string | BrokerApiCredentials) {
+  const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
+
+  if (!apiKey || !apiSecret) {
+    return null
+  }
+
+  const payload = await fetchTrading212Json<Trading212ApiResponse>("/equity/account/summary", apiKey, apiSecret)
+  return mapTrading212AccountSummary(payload)
+}
+
+export async function fetchTrading212SyncDataFromApi(credentials?: string | BrokerApiCredentials) {
+  const positions = await fetchTrading212PortfolioFromApi(credentials)
+  const activity = await fetchTrading212ActivityFromApi(credentials)
+  const accountSnapshot = await fetchTrading212AccountSummaryFromApi(credentials)
+
+  return {
+    positions,
+    activity,
+    accountSnapshot,
+    syncStats: {
+      positionsMapped: positions.length,
+      positionsStored: positions.length,
+      activityImported: activity.length,
+    },
+  }
 }
 
 export async function searchTrading212InstrumentsFromApi(

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getBrokerProvider } from '@/lib/integrations/factory';
 import { createClient } from '@/utils/supabase/server';
 import { getConfiguredBackend } from '@/lib/backend/config';
-import { aggregatePositionsForStorage } from '@/lib/portfolio/position-normalizer';
+import type { BrokerAccountSnapshot, BrokerSyncStats } from '@/types/broker-account';
 import type { BrokerId, PortfolioActivityEvent, PortfolioApiResponse, PortfolioPosition } from '@/types/portfolio';
 import { createServerPortfolioRepository } from '@/lib/portfolio/server-factory';
 
@@ -21,9 +21,30 @@ type SupabaseWriter = {
   from(table: string): TableWriter
 }
 
+type RecordBrokerSyncOptions = {
+  accountSnapshot?: BrokerAccountSnapshot | null
+  syncStats?: BrokerSyncStats
+}
+
 async function assertNoSupabaseError(error: Error | null, context: string) {
   if (error) {
     throw new Error(`${context}: ${error.message}`)
+  }
+}
+
+function resolveAccountSnapshot(
+  positions: PortfolioPosition[],
+  accountSnapshot?: BrokerAccountSnapshot | null
+): BrokerAccountSnapshot | null {
+  if (!accountSnapshot) {
+    return null
+  }
+
+  const holdingsValue = positions.reduce((sum, position) => sum + position.nativeTotalValue, 0)
+
+  return {
+    ...accountSnapshot,
+    holdingsValue: accountSnapshot.holdingsValue ?? holdingsValue,
   }
 }
 
@@ -69,6 +90,8 @@ async function recordBrokerSyncFailure(
     source_type: "broker_api",
     status: "failed",
     positions_imported: 0,
+    positions_mapped: 0,
+    activity_imported: 0,
     started_at: now,
     finished_at: now,
     error_message: message,
@@ -82,10 +105,14 @@ async function recordBrokerSync(
   userId: string,
   broker: BrokerId,
   positions: PortfolioPosition[],
-  activity?: PortfolioActivityEvent[]
+  activity?: PortfolioActivityEvent[],
+  options: RecordBrokerSyncOptions = {}
 ) {
   const now = new Date().toISOString()
-  const storedPositions = aggregatePositionsForStorage(positions)
+  const accountSnapshot = resolveAccountSnapshot(positions, options.accountSnapshot)
+  const positionsMapped = options.syncStats?.positionsMapped ?? positions.length
+  const positionsStored = positions.length
+  const activityImported = options.syncStats?.activityImported ?? activity?.length ?? 0
 
   await assertNoSupabaseError(
     (await writer.from("broker_connections").upsert(
@@ -99,6 +126,16 @@ async function recordBrokerSync(
       last_synced_at: now,
       last_error: null,
       updated_at: now,
+      account_currency: accountSnapshot?.currency ?? null,
+      available_cash: accountSnapshot?.availableCash ?? null,
+      invested_amount: accountSnapshot?.investedAmount ?? null,
+      total_equity: accountSnapshot?.totalEquity ?? null,
+      holdings_value: accountSnapshot?.holdingsValue ?? null,
+      unrealized_pl: accountSnapshot?.unrealizedPl ?? null,
+      realized_pl: accountSnapshot?.realizedPl ?? null,
+      last_positions_mapped: positionsMapped,
+      last_positions_stored: positionsStored,
+      last_activity_imported: activityImported,
     },
     { onConflict: "user_id,broker,source_type" }
   )).error,
@@ -112,16 +149,19 @@ async function recordBrokerSync(
     trigger: "manual",
     source_type: "broker_api",
     status: "succeeded",
-    positions_imported: storedPositions.length,
+    positions_imported: positionsStored,
+    positions_mapped: positionsMapped,
+    activity_imported: activityImported,
     started_at: now,
     finished_at: now,
   })).error,
     "Failed to record sync run"
   )
 
-  const positionRows = storedPositions.map((position) => ({
+  const positionRows = positions.map((position) => ({
     user_id: userId,
     broker: position.broker,
+    external_position_id: position.externalPositionId,
     ticker: position.ticker,
     company_name: position.companyName,
     shares: position.shares,
@@ -137,17 +177,17 @@ async function recordBrokerSync(
 
   if (positionRows.length > 0) {
     await assertNoSupabaseError(
-      (await writer.from("positions").upsert(positionRows, { onConflict: "user_id,broker,ticker" })).error,
+      (await writer.from("positions").upsert(positionRows, { onConflict: "user_id,broker,external_position_id" })).error,
       `Failed to store ${broker} positions`
     )
 
-    const storedTickers = storedPositions.map((position) => position.ticker)
+    const storedExternalIds = positions.map((position) => `"${position.externalPositionId.replaceAll('"', '\\"')}"`)
     await assertNoSupabaseError(
       (await writer.from("positions")
         .delete()
         .eq("user_id", userId)
         .eq("broker", broker)
-        .not("ticker", "in", `(${storedTickers.join(",")})`)).error,
+        .not("external_position_id", "in", `(${storedExternalIds.join(",")})`)).error,
       `Failed to remove stale ${broker} positions`
     )
   } else {
@@ -157,30 +197,28 @@ async function recordBrokerSync(
     )
   }
 
-  if (activity) {
-    if (activity.length > 0) {
-      for (let index = 0; index < activity.length; index += 100) {
-        await assertNoSupabaseError(
-          (await writer.from("activity_events").upsert(
-          activity.slice(index, index + 100).map((event) => ({
-            user_id: userId,
-            broker: event.broker,
-            ticker: event.ticker,
-            company_name: event.companyName,
-            event_type: event.type,
-            shares: event.shares,
-            price: event.price,
-            native_currency: event.nativeCurrency,
-            gross_amount_gbp: event.grossAmountGbp,
-            realised_profit_gbp: event.realisedProfitGbp ?? null,
-            order_type: event.orderType ?? null,
-            timestamp: event.timestamp,
-          })),
-          { onConflict: "user_id,broker,ticker,timestamp,event_type" }
-        )).error,
-          `Failed to store ${broker} activity`
-        )
-      }
+  if (activity && activity.length > 0) {
+    for (let index = 0; index < activity.length; index += 100) {
+      await assertNoSupabaseError(
+        (await writer.from("activity_events").upsert(
+        activity.slice(index, index + 100).map((event) => ({
+          user_id: userId,
+          broker: event.broker,
+          ticker: event.ticker,
+          company_name: event.companyName,
+          event_type: event.type,
+          shares: event.shares,
+          price: event.price,
+          native_currency: event.nativeCurrency,
+          gross_amount_gbp: event.grossAmountGbp,
+          realised_profit_gbp: event.realisedProfitGbp ?? null,
+          order_type: event.orderType ?? null,
+          timestamp: event.timestamp,
+        })),
+        { onConflict: "user_id,broker,ticker,timestamp,event_type" }
+      )).error,
+        `Failed to store ${broker} activity`
+      )
     }
   }
 }
@@ -215,7 +253,14 @@ async function refreshSupabaseBrokerData(includeActivity: boolean) {
         ? await provider.getSyncData({ apiKey, apiSecret })
         : { positions: await provider.getPositions({ apiKey, apiSecret }), activity: undefined }
 
-      await recordBrokerSync(writer, user.id, broker, syncData.positions, syncData.activity)
+      await recordBrokerSync(writer, user.id, broker, syncData.positions, syncData.activity, {
+        accountSnapshot: syncData.accountSnapshot ?? null,
+        syncStats: syncData.syncStats ?? {
+          positionsMapped: syncData.positions.length,
+          positionsStored: syncData.positions.length,
+          activityImported: syncData.activity?.length ?? 0,
+        },
+      })
     } catch (error) {
       await recordBrokerSyncFailure(writer, user.id, broker, error)
     }

@@ -1,5 +1,6 @@
 import { createClient, getSupabaseSetupMessage } from "@/utils/supabase/server"
 import { calculateFreshness } from "@/lib/dashboard/freshness"
+import type { BrokerAccountSnapshot, BrokerSyncStats } from "@/types/broker-account"
 import type { PortfolioApiResponse, PortfolioActivityEvent, PortfolioDataMeta, PortfolioPosition } from "@/types/portfolio"
 import type { ServerPortfolioRepository } from "@/lib/portfolio/repository"
 import { normalizeImportedHolding } from "@/lib/portfolio/position-normalizer"
@@ -7,6 +8,7 @@ import { createFailurePortfolioResponse, createSuccessPortfolioResponse } from "
 
 type PositionRow = {
   broker: "t212" | "etoro"
+  external_position_id: string
   ticker: string
   company_name: string
   shares: number | string
@@ -42,6 +44,54 @@ type BrokerConnectionRow = {
   is_enabled: boolean
   last_synced_at: string | null
   last_error: string | null
+  account_currency: string | null
+  available_cash: number | string | null
+  invested_amount: number | string | null
+  total_equity: number | string | null
+  holdings_value: number | string | null
+  unrealized_pl: number | string | null
+  realized_pl: number | string | null
+  last_positions_mapped: number | null
+  last_positions_stored: number | null
+  last_activity_imported: number | null
+}
+
+function mapBrokerAccountSnapshot(connection: BrokerConnectionRow): BrokerAccountSnapshot | null {
+  const hasAccountData = connection.available_cash !== null
+    || connection.invested_amount !== null
+    || connection.total_equity !== null
+    || connection.holdings_value !== null
+
+  if (!hasAccountData) {
+    return null
+  }
+
+  return {
+    broker: connection.broker,
+    currency: connection.account_currency === "GBP" ? "GBP" : "USD",
+    availableCash: connection.available_cash === null ? null : toNumber(connection.available_cash),
+    investedAmount: connection.invested_amount === null ? null : toNumber(connection.invested_amount),
+    totalEquity: connection.total_equity === null ? null : toNumber(connection.total_equity),
+    holdingsValue: connection.holdings_value === null ? null : toNumber(connection.holdings_value),
+    unrealizedPl: connection.unrealized_pl === null ? null : toNumber(connection.unrealized_pl),
+    realizedPl: connection.realized_pl === null ? null : toNumber(connection.realized_pl),
+  }
+}
+
+function mapBrokerSyncStats(connection: BrokerConnectionRow): BrokerSyncStats | null {
+  if (
+    connection.last_positions_mapped === null
+    && connection.last_positions_stored === null
+    && connection.last_activity_imported === null
+  ) {
+    return null
+  }
+
+  return {
+    positionsMapped: connection.last_positions_mapped ?? 0,
+    positionsStored: connection.last_positions_stored ?? 0,
+    activityImported: connection.last_activity_imported ?? 0,
+  }
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -79,6 +129,8 @@ function buildPortfolioMeta(
       syncStatus: connection.sync_status,
       freshness,
       lastError: connection.last_error,
+      account: mapBrokerAccountSnapshot(connection),
+      lastSyncStats: mapBrokerSyncStats(connection),
     }
   })
 
@@ -106,6 +158,7 @@ function mapPositionRow(row: PositionRow): PortfolioPosition {
   return normalizeImportedHolding({
     broker: row.broker,
     brokerLabel: getBrokerLabel(row.broker),
+    externalPositionId: row.external_position_id || `ticker:${row.ticker}`,
     ticker: row.ticker,
     companyName: row.company_name,
     shares: toNumber(row.shares),
@@ -167,13 +220,13 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
     const [positionsResponse, connectionsResponse] = await Promise.all([
       supabase
         .from("positions")
-        .select("broker, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at")
+        .select("broker, external_position_id, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at")
         .eq("user_id", user.id)
         .order("broker")
         .order("ticker"),
       supabase
         .from("broker_connections")
-        .select("broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error")
+        .select("broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error, account_currency, available_cash, invested_amount, total_equity, holdings_value, unrealized_pl, realized_pl, last_positions_mapped, last_positions_stored, last_activity_imported")
         .eq("user_id", user.id)
         .eq("is_enabled", true),
     ]) as unknown as [

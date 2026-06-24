@@ -1,5 +1,6 @@
 import { PageShell } from "@/components/app/page-shell"
 import { EtoroApiSyncCard } from "@/components/integrations/etoro-api-sync-card"
+import { SyncStatusCard } from "@/components/integrations/sync-status-card"
 import { Trading212ApiSyncCard } from "@/components/integrations/trading212-api-sync-card"
 
 export default function IntegrationsPage() {
@@ -14,6 +15,8 @@ export default function IntegrationsPage() {
         <Trading212ApiSyncCard />
         <EtoroApiSyncCard />
       </div>
+
+      <SyncStatusCard />
     </PageShell>
   )
 }

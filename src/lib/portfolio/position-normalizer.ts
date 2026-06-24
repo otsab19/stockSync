@@ -10,6 +10,7 @@ const TICKER_ALIASES: Record<string, string> = {
 export type ImportedHoldingInput = {
   broker: BrokerId
   brokerLabel: string
+  externalPositionId: string
   ticker: string
   companyName: string
   shares: number
@@ -63,6 +64,7 @@ export function inferAssetType(label: string, fallback: AssetType = "stock"): As
 export function normalizeImportedHolding({
   broker,
   brokerLabel,
+  externalPositionId,
   ticker,
   companyName,
   shares,
@@ -77,6 +79,7 @@ export function normalizeImportedHolding({
   recentChange = 0,
 }: ImportedHoldingInput): PortfolioPosition {
   const normalizedTicker = normalizeTickerSymbol(ticker)
+  const safeExternalPositionId = externalPositionId.trim() || `ticker:${normalizedTicker}`
   const safeShares = Number(shares)
   const safeAveragePrice = Number(avgPrice)
   const safeLivePrice = Number(livePrice ?? avgPrice)
@@ -89,7 +92,8 @@ export function normalizeImportedHolding({
   const resolvedTotalPLPercent = totalPLPercent ?? (totalPlNative / totalCostBasisNative) * 100
 
   return {
-    id: `${broker}-${normalizedTicker.toLowerCase()}`,
+    id: `${broker}-${safeExternalPositionId}`,
+    externalPositionId: safeExternalPositionId,
     ticker: normalizedTicker,
     companyName: companyName.trim() || normalizedTicker,
     broker,
@@ -131,6 +135,7 @@ function mergePositionGroup(group: PortfolioPosition[]): PortfolioPosition {
   return normalizeImportedHolding({
     broker: first.broker,
     brokerLabel: first.brokerLabel,
+    externalPositionId: first.externalPositionId,
     ticker: first.ticker,
     companyName: first.companyName,
     shares: totalShares,

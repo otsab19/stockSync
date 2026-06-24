@@ -16,6 +16,9 @@ function mapConnection(row: BrokerConnectionRow): BrokerConnectionSummary {
     isEnabled: row.is_enabled,
     lastSyncedAt: row.last_synced_at,
     lastError: row.last_error,
+    lastPositionsMapped: row.last_positions_mapped,
+    lastPositionsStored: row.last_positions_stored,
+    lastActivityImported: row.last_activity_imported,
   }
 }
 
@@ -30,6 +33,8 @@ function mapRun(row: SyncRunRow): SyncRunSummary {
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     positionsImported: row.positions_imported,
+    positionsMapped: row.positions_mapped ?? row.positions_imported,
+    activityImported: row.activity_imported ?? 0,
     errorMessage: row.error_message,
   }
 }
@@ -68,11 +73,11 @@ export class SupabaseSyncStatusRepository implements SyncStatusRepository {
     const [connectionsResponse, runsResponse] = await Promise.all([
       supabase
         .from("broker_connections")
-        .select("id, broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error")
+        .select("id, broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error, last_positions_mapped, last_positions_stored, last_activity_imported")
         .order("updated_at", { ascending: false }),
       supabase
         .from("sync_runs")
-        .select("id, connection_id, broker, trigger, source_type, status, positions_imported, error_message, started_at, finished_at")
+        .select("id, connection_id, broker, trigger, source_type, status, positions_imported, positions_mapped, activity_imported, error_message, started_at, finished_at")
         .order("started_at", { ascending: false })
         .limit(10),
     ])

@@ -5,6 +5,7 @@ import type { PortfolioPosition } from "@/types/portfolio"
 function createPosition(overrides: Partial<PortfolioPosition> = {}): PortfolioPosition {
   return {
     id: "etoro-nvda",
+    externalPositionId: "ticker:NVDA",
     ticker: "NVDA",
     companyName: "NVIDIA Corporation",
     broker: "etoro",
@@ -29,8 +30,8 @@ function createPosition(overrides: Partial<PortfolioPosition> = {}): PortfolioPo
 describe("aggregatePositionsForStorage", () => {
   it("merges duplicate broker/ticker rows into one stored position", () => {
     const merged = aggregatePositionsForStorage([
-      createPosition({ shares: 2, avgPrice: 100, nativeTotalValue: 220, totalPL: 20, normalizedTotalValueGbp: 173.8 }),
-      createPosition({ shares: 3, avgPrice: 120, nativeTotalValue: 330, totalPL: 30, normalizedTotalValueGbp: 260.7 }),
+      createPosition({ shares: 2, avgPrice: 100, nativeTotalValue: 220, totalPL: 20, normalizedTotalValueGbp: 173.8, externalPositionId: "position:1" }),
+      createPosition({ shares: 3, avgPrice: 120, nativeTotalValue: 330, totalPL: 30, normalizedTotalValueGbp: 260.7, externalPositionId: "position:2" }),
     ])
 
     expect(merged).toHaveLength(1)
@@ -43,8 +44,8 @@ describe("aggregatePositionsForStorage", () => {
   it("keeps separate rows for different brokers or tickers", () => {
     const merged = aggregatePositionsForStorage([
       createPosition({ broker: "etoro", brokerLabel: "eToro", ticker: "NVDA" }),
-      createPosition({ broker: "t212", brokerLabel: "Trading 212", ticker: "NVDA", id: "t212-nvda" }),
-      createPosition({ ticker: "AAPL", companyName: "Apple Inc.", id: "etoro-aapl" }),
+      createPosition({ broker: "t212", brokerLabel: "Trading 212", ticker: "NVDA", id: "t212-nvda", externalPositionId: "ticker:NVDA" }),
+      createPosition({ ticker: "AAPL", companyName: "Apple Inc.", id: "etoro-aapl", externalPositionId: "ticker:AAPL" }),
     ])
 
     expect(merged).toHaveLength(3)

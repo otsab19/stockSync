@@ -26,6 +26,7 @@ function makeEvent(overrides: Partial<PortfolioActivityEvent> & Pick<PortfolioAc
 function makePosition(overrides: Partial<PortfolioPosition>): PortfolioPosition {
   return {
     id: "pos-1",
+    externalPositionId: "ticker:NVDA",
     broker: "t212",
     brokerLabel: "Trading 212",
     ticker: "NVDA",

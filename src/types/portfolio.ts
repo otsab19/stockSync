@@ -1,3 +1,5 @@
+import type { BrokerAccountSnapshot, BrokerSyncStats } from "@/types/broker-account"
+
 export type BrokerId = "t212" | "etoro" | (string & {})
 export type AssetType = "stock" | "etf" | "crypto"
 export type AlertStatus = "stable" | "near-alert" | "triggered"
@@ -6,6 +8,7 @@ export type PortfolioActivityType = "buy" | "sell"
 
 export type PortfolioPosition = {
   id: string
+  externalPositionId: string
   ticker: string
   companyName: string
   broker: BrokerId
@@ -50,6 +53,8 @@ export type PortfolioDataMeta = {
     syncStatus?: PortfolioBrokerSyncStatus
     freshness?: PortfolioFreshness
     lastError?: string | null
+    account?: BrokerAccountSnapshot | null
+    lastSyncStats?: BrokerSyncStats | null
   }>
 }
 

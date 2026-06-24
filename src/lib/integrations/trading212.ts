@@ -1,9 +1,10 @@
 import type { BrokerProvider } from "@/lib/integrations/provider"
 import { importTrading212PortfolioFromCsv } from "@/lib/integrations/trading212-csv"
 import {
-  fetchTrading212ActivityFromApi,
   fetchTrading212PortfolioFromApi,
+  fetchTrading212SyncDataFromApi,
   getTrading212OrderCapabilities,
+  mapTrading212AccountSummary,
   placeTrading212Order,
   previewTrading212Order,
   searchTrading212InstrumentsFromApi,
@@ -39,12 +40,8 @@ export const trading212Provider: BrokerProvider = {
     }
 
     try {
-      // Small delay to avoid rate limiting after positions fetch
       await new Promise((resolve) => setTimeout(resolve, 1000))
-      return {
-        positions,
-        activity: await fetchTrading212ActivityFromApi(credentials),
-      }
+      return await fetchTrading212SyncDataFromApi(credentials)
     } catch (error) {
       if (isTrading212RateLimitError(error)) {
         throw new Error("Trading 212 positions refreshed, but trade history hit the broker rate limit. Try refreshing activity again in a minute.")

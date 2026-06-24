@@ -222,6 +222,15 @@ export function SyncStatusCard() {
                         ? `Last synced ${formatDateTime(connection.lastSyncedAt)}`
                         : "This connection has not completed a sync yet."}
                     </p>
+                    {connection.lastPositionsStored !== null ? (
+                      <p className="mt-1 text-xs">
+                        Last sync stored {connection.lastPositionsStored} lot{connection.lastPositionsStored === 1 ? "" : "s"}
+                        {connection.lastPositionsMapped !== null && connection.lastPositionsMapped !== connection.lastPositionsStored
+                          ? ` (${connection.lastPositionsMapped} mapped from broker API)`
+                          : ""}
+                        {connection.lastActivityImported !== null ? ` · ${connection.lastActivityImported} activity events` : ""}
+                      </p>
+                    ) : null}
                     {connection.lastError ? <p className="mt-1 text-xs text-destructive">Last error: {connection.lastError}</p> : null}
                   </div>
                 ))
@@ -244,7 +253,9 @@ export function SyncStatusCard() {
                     <p className="mt-2 text-xs">
                       Started {formatDateTime(run.startedAt)}
                       {run.finishedAt ? ` • Finished ${formatDateTime(run.finishedAt)}` : " • Still running"}
-                      {` • Imported ${run.positionsImported} position${run.positionsImported === 1 ? "" : "s"}`}
+                      {` • Stored ${run.positionsImported} lot${run.positionsImported === 1 ? "" : "s"}`}
+                      {run.positionsMapped !== run.positionsImported ? ` (${run.positionsMapped} mapped)` : ""}
+                      {run.activityImported > 0 ? ` · ${run.activityImported} activity events` : ""}
                     </p>
                     {run.errorMessage ? <p className="mt-1 text-xs text-destructive">Error: {run.errorMessage}</p> : null}
                   </div>

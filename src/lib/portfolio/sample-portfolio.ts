@@ -2,8 +2,13 @@ import type { PortfolioPosition } from "@/types/portfolio"
 
 const usdToGbp = 0.79
 
-function createPosition(position: PortfolioPosition): PortfolioPosition {
-  return position
+function createPosition(position: Omit<PortfolioPosition, "externalPositionId"> & { externalPositionId?: string }): PortfolioPosition {
+  const externalPositionId = position.externalPositionId || `ticker:${position.ticker}`
+  return {
+    ...position,
+    externalPositionId,
+    id: position.id || `${position.broker}-${externalPositionId}`,
+  }
 }
 
 const trading212SamplePortfolio: PortfolioPosition[] = [

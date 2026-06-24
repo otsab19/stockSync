@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { fetchEtoroActivityFromApi, fetchEtoroPortfolioFromApi, fetchEtoroSyncDataFromApi, mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
+import { extractEtoroAccountSnapshot, fetchEtoroActivityFromApi, fetchEtoroPortfolioFromApi, fetchEtoroSyncDataFromApi, mapEtoroPortfolioResponse } from "@/lib/integrations/etoro-live"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -589,6 +589,36 @@ describe("eToro live mapper", () => {
     expect(positions[0]?.shares).toBe(2)
   })
 
+  it("maps PnL positions that only expose amount and nested unrealizedPnL", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [
+          {
+            positionID: 9001,
+            instrumentID: 1137,
+            symbolFull: "NVDA",
+            instrumentDisplayName: "NVIDIA Corporation",
+            isBuy: true,
+            leverage: 1,
+            amount: 820.72,
+            openRate: 180,
+            currentRate: 182,
+            currency: "USD",
+            unrealizedPnL: { pnL: 42.5 },
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0]?.ticker).toBe("NVDA")
+    expect(positions[0]?.externalPositionId).toBe("position:9001")
+    expect(positions[0]?.normalizedTotalValueGbp).toBeGreaterThan(0)
+    expect(positions[0]?.totalPL).toBeCloseTo(42.5 * 0.79, 2)
+  })
+
   it("dedupes duplicate eToro position IDs before mapping", () => {
     const payload = {
       clientPortfolio: {
@@ -620,35 +650,6 @@ describe("eToro live mapper", () => {
     expect(positions).toHaveLength(1)
   })
 
-  it("maps PnL positions that only expose amount and nested unrealizedPnL", () => {
-    const payload = {
-      clientPortfolio: {
-        positions: [
-          {
-            positionID: 9001,
-            instrumentID: 1137,
-            symbolFull: "NVDA",
-            instrumentDisplayName: "NVIDIA Corporation",
-            isBuy: true,
-            leverage: 1,
-            amount: 820.72,
-            openRate: 180,
-            currentRate: 182,
-            currency: "USD",
-            unrealizedPnL: { pnL: 42.5 },
-          },
-        ],
-      },
-    }
-
-    const positions = mapEtoroPortfolioResponse(payload)
-
-    expect(positions).toHaveLength(1)
-    expect(positions[0]?.ticker).toBe("NVDA")
-    expect(positions[0]?.normalizedTotalValueGbp).toBeGreaterThan(0)
-    expect(positions[0]?.totalPL).toBeCloseTo(42.5 * 0.79, 2)
-  })
-
   it("includes mirror portfolio positions from the PnL payload", () => {
     const payload = {
       clientPortfolio: {
@@ -677,6 +678,27 @@ describe("eToro live mapper", () => {
 
     expect(positions).toHaveLength(1)
     expect(positions[0]?.ticker).toBe("NVDA")
+  })
+
+  it("extracts account cash and equity from the client portfolio payload", () => {
+    const snapshot = extractEtoroAccountSnapshot({
+      clientPortfolio: {
+        credit: 125.5,
+        totalInvested: 820.72,
+        equity: 946.22,
+        currency: "USD",
+      },
+    })
+
+    expect(snapshot).toEqual({
+      broker: "etoro",
+      currency: "USD",
+      availableCash: 125.5,
+      investedAmount: 820.72,
+      totalEquity: 946.22,
+      holdingsValue: null,
+      unrealizedPl: null,
+    })
   })
 
   it("loads open positions from the PnL endpoint when the portfolio endpoint is empty", async () => {

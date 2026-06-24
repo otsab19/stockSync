@@ -1301,6 +1301,103 @@ function isExplicitNonLongPositionRow(row: EtoroApiRow) {
   return getBooleanValue(row, ["isBuy", "IsBuy", "direction", "Direction"]) === false
 }
 
+function getEtoroPositionExternalId(row: EtoroApiRow, normalizedTicker: string) {
+  const positionId = getNumberValue(row, ["positionID", "PositionID", "positionId", "PositionId"])
+  if (positionId !== null) {
+    return `position:${positionId}`
+  }
+
+  const instrumentId = getEtoroInstrumentId(row)
+  if (instrumentId !== null) {
+    return `instrument:${instrumentId}`
+  }
+
+  return `ticker:${normalizedTicker}`
+}
+
+export function extractEtoroAccountSnapshot(payload: unknown): import("@/types/broker-account").BrokerAccountSnapshot | null {
+  if (!isRecord(payload)) {
+    return null
+  }
+
+  const clientPortfolio = isRecord(payload.clientPortfolio) ? payload.clientPortfolio : payload
+  if (!isRecord(clientPortfolio)) {
+    return null
+  }
+
+  const configuredCurrency = process.env.ETORO_ACCOUNT_CURRENCY?.trim().toUpperCase()
+  const rawCurrency = getStringValue(clientPortfolio, ["currency", "Currency", "accountCurrency", "AccountCurrency"])
+    ?? configuredCurrency
+  const currency = rawCurrency === "GBP" ? "GBP" : "USD"
+  const availableCash = getNumberValue(clientPortfolio, [
+    "credit",
+    "Credit",
+    "availableCredit",
+    "AvailableCredit",
+    "balance",
+    "Balance",
+    "availableCash",
+    "AvailableCash",
+  ])
+  const investedAmount = getNumberValue(clientPortfolio, [
+    "totalInvested",
+    "TotalInvested",
+    "invested",
+    "Invested",
+    "investment",
+    "Investment",
+  ])
+  const totalEquity = getNumberValue(clientPortfolio, [
+    "equity",
+    "Equity",
+    "totalEquity",
+    "TotalEquity",
+    "accountEquity",
+    "AccountEquity",
+  ])
+  const unrealizedPl = getNumberValue(clientPortfolio, [
+    "unrealizedPnL",
+    "unrealizedPnl",
+    "UnrealizedPnL",
+    "unrealizedProfit",
+    "UnrealizedProfit",
+  ])
+
+  if (availableCash === null && investedAmount === null && totalEquity === null && unrealizedPl === null) {
+    return null
+  }
+
+  return {
+    broker: "etoro",
+    currency,
+    availableCash,
+    investedAmount,
+    totalEquity,
+    holdingsValue: null,
+    unrealizedPl,
+  }
+}
+
+function mergeEtoroPositionRows(rowGroups: EtoroApiRow[][]): EtoroApiRow[] {
+  const merged: EtoroApiRow[] = []
+  const seenPositionIds = new Set<number>()
+
+  rowGroups.forEach((rows) => {
+    rows.forEach((row) => {
+      const positionId = getNumberValue(row, ["positionID", "PositionID", "positionId", "PositionId"])
+      if (positionId !== null) {
+        if (seenPositionIds.has(positionId)) {
+          return
+        }
+        seenPositionIds.add(positionId)
+      }
+      merged.push(row)
+    })
+  })
+
+  return merged
+}
+
 function mapEtoroRowToPosition(
   row: EtoroApiRow,
   metadataByInstrumentId: Map<number, EtoroInstrumentMetadata> = new Map(),
@@ -1470,6 +1567,7 @@ function mapEtoroRowToPosition(
   const resolvedCompanyName = companyName ?? ticker
   const isLse = metadata?.priceScale === "gbx" || metadata?.currency === "GBP" || priceScale === "gbx"
   const cleanedTicker = cleanEtoroTicker(ticker, isLse)
+  const externalPositionId = getEtoroPositionExternalId(row, cleanedTicker)
   const fxRateToGbp = currency === "GBP" ? 1 : undefined
   const totalPL = unrealizedPlNative === null
     ? undefined
@@ -1480,6 +1578,7 @@ function mapEtoroRowToPosition(
   return normalizeImportedHolding({
     broker: "etoro",
     brokerLabel: "eToro",
+    externalPositionId,
     ticker: cleanedTicker,
     companyName: resolvedCompanyName,
     shares: resolvedShares,
@@ -1717,6 +1816,8 @@ export function mapEtoroPortfolioResponse(payload: unknown): PortfolioPosition[]
 type EtoroPortfolioData = {
   positions: PortfolioPosition[]
   openActivity: PortfolioActivityEvent[]
+  accountSnapshot: import("@/types/broker-account").BrokerAccountSnapshot | null
+  rowsMapped: number
 }
 
 async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCredentials): Promise<EtoroPortfolioData> {
@@ -1729,10 +1830,10 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
   const baseUrl = process.env.ETORO_API_BASE_URL?.trim() || DEFAULT_ETORO_API_BASE_URL
   const attemptedResponses: string[] = []
   const headers = buildEtoroHeaders(apiKey, apiSecret)
+  const rowGroups: EtoroApiRow[][] = []
+  const payloads: unknown[] = []
 
   logger.info({ broker: "etoro", mode: process.env.ETORO_ACCOUNT_MODE?.trim().toLowerCase() || "real" }, "Starting eToro portfolio sync")
-
-  let lastMappingFailure: { path: string; sampleKeys: string } | null = null
 
   for (const path of getEtoroPortfolioPaths()) {
     logger.debug({ broker: "etoro", path }, "Requesting eToro portfolio endpoint")
@@ -1750,66 +1851,67 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
     }
 
     const payload = await response.json()
+    payloads.push(payload)
     const rows = extractEtoroRows(payload)
-    const instrumentIds = Array.from(new Set(rows.map(getEtoroInstrumentId).filter((value): value is number => value !== null)))
+    if (rows.length > 0) {
+      rowGroups.push(rows)
+      logger.info({ broker: "etoro", path, rows: rows.length }, "Loaded eToro portfolio rows from endpoint")
+    }
+  }
 
-    logger.info({ broker: "etoro", path, rows: rows.length, instrumentIds: instrumentIds.length }, "Loaded eToro portfolio rows")
+  const mergedRows = mergeEtoroPositionRows(rowGroups)
+  const accountSnapshot = payloads.map(extractEtoroAccountSnapshot).find(Boolean) ?? null
+  const instrumentIds = Array.from(new Set(mergedRows.map(getEtoroInstrumentId).filter((value): value is number => value !== null)))
 
-    let metadataByInstrumentId = new Map<number, EtoroInstrumentMetadata>()
-    let ratesByInstrumentId = new Map<number, EtoroRateSnapshot>()
+  logger.info({ broker: "etoro", rows: mergedRows.length, instrumentIds: instrumentIds.length }, "Loaded eToro portfolio rows")
 
-    try {
-      ;[metadataByInstrumentId, ratesByInstrumentId] = await Promise.all([
-        fetchEtoroInstrumentMetadata(baseUrl, headers, instrumentIds),
-        fetchEtoroLiveRates(baseUrl, headers, instrumentIds),
-      ])
-      logger.debug({ broker: "etoro", metadataCount: metadataByInstrumentId.size, rateCount: ratesByInstrumentId.size }, "eToro enrichment data loaded")
-    } catch (error) {
-      logger.warn(
-        { broker: "etoro", error: getErrorLogDetails(error), instrumentIds: instrumentIds.length },
-        "eToro portfolio enrichment failed; continuing with portfolio row fields only"
+  if (mergedRows.length === 0) {
+    if (attemptedResponses.length > 0) {
+      throw new Error(
+        `Failed to load the eToro portfolio from the API. Tried: ${attemptedResponses.join("; ")}. The documented real-account path is ${DEFAULT_ETORO_REAL_PORTFOLIO_PATH} on ${baseUrl}; if your account uses demo mode or a different documented path, set ETORO_ACCOUNT_MODE or ETORO_PORTFOLIO_PATHS.`
       )
     }
 
-    const portfolioData = mapEtoroRowsToPortfolioData(rows, metadataByInstrumentId, ratesByInstrumentId)
-    const positions = portfolioData.positions
-
-    logger.info({ broker: "etoro", positions: positions.length }, "Mapped eToro portfolio positions")
-
-    if (positions.length > 0) {
-      return portfolioData
-    }
-
-    if (rows.length > 0) {
-      if (rows.every(isExplicitNonLongPositionRow)) {
-        logger.debug({ broker: "etoro", path }, "eToro endpoint returned short-only rows; trying next endpoint")
-        continue
-      }
-
-      const sampleKeys = Object.keys(rows[0] ?? {}).slice(0, 12).join(", ") || "unknown"
-      logger.warn({ broker: "etoro", path, sampleKeys }, "eToro portfolio rows loaded but none mapped into positions")
-      lastMappingFailure = { path, sampleKeys }
-      continue
-    }
-
-    logger.debug({ broker: "etoro", path }, "eToro portfolio endpoint returned no position rows; trying next endpoint")
+    return { positions: [], openActivity: [], accountSnapshot, rowsMapped: 0 }
   }
 
-  if (lastMappingFailure) {
-    throw new Error(
-      `eToro responded successfully, but none of the returned positions matched the portfolio fields this app currently supports. Sample row keys: ${lastMappingFailure.sampleKeys}. If eToro changed its payload shape, update the live mapper or configure ETORO_PORTFOLIO_PATHS for the correct positions endpoint.`
+  let metadataByInstrumentId = new Map<number, EtoroInstrumentMetadata>()
+  let ratesByInstrumentId = new Map<number, EtoroRateSnapshot>()
+
+  try {
+    ;[metadataByInstrumentId, ratesByInstrumentId] = await Promise.all([
+      fetchEtoroInstrumentMetadata(baseUrl, headers, instrumentIds),
+      fetchEtoroLiveRates(baseUrl, headers, instrumentIds),
+    ])
+    logger.debug({ broker: "etoro", metadataCount: metadataByInstrumentId.size, rateCount: ratesByInstrumentId.size }, "eToro enrichment data loaded")
+  } catch (error) {
+    logger.warn(
+      { broker: "etoro", error: getErrorLogDetails(error), instrumentIds: instrumentIds.length },
+      "eToro portfolio enrichment failed; continuing with portfolio row fields only"
     )
   }
 
-  if (attemptedResponses.length > 0) {
-    throw new Error(
-      attemptedResponses.length > 0
-        ? `Failed to load the eToro portfolio from the API. Tried: ${attemptedResponses.join("; ")}. The documented real-account path is ${DEFAULT_ETORO_REAL_PORTFOLIO_PATH} on ${baseUrl}; if your account uses demo mode or a different documented path, set ETORO_ACCOUNT_MODE or ETORO_PORTFOLIO_PATHS.`
-        : "Failed to load the eToro portfolio from the API."
-    )
+  const portfolioData = mapEtoroRowsToPortfolioData(mergedRows, metadataByInstrumentId, ratesByInstrumentId)
+  const positions = portfolioData.positions
+
+  logger.info({ broker: "etoro", positions: positions.length }, "Mapped eToro portfolio positions")
+
+  if (positions.length > 0) {
+    return {
+      ...portfolioData,
+      accountSnapshot,
+      rowsMapped: mergedRows.length,
+    }
   }
 
-  return { positions: [], openActivity: [] }
+  if (mergedRows.every(isExplicitNonLongPositionRow)) {
+    return { positions: [], openActivity: [], accountSnapshot, rowsMapped: mergedRows.length }
+  }
+
+  const sampleKeys = Object.keys(mergedRows[0] ?? {}).slice(0, 12).join(", ") || "unknown"
+  throw new Error(
+    `eToro responded successfully, but none of the returned positions matched the portfolio fields this app currently supports. Sample row keys: ${sampleKeys}. If eToro changed its payload shape, update the live mapper or configure ETORO_PORTFOLIO_PATHS for the correct positions endpoint.`
+  )
 }
 
 export async function fetchEtoroPortfolioFromApi(credentials?: string | BrokerApiCredentials): Promise<PortfolioPosition[]> {
@@ -1842,11 +1944,27 @@ export async function fetchEtoroSyncDataFromApi(credentials?: string | BrokerApi
     }
   })
 
+  const activity = Array.from(activityById.values()).sort(
+      (left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
+    )
+
+  const holdingsValue = portfolioData.positions.reduce((sum, position) => sum + position.nativeTotalValue, 0)
+  const accountSnapshot = portfolioData.accountSnapshot
+    ? {
+        ...portfolioData.accountSnapshot,
+        holdingsValue: portfolioData.accountSnapshot.holdingsValue ?? holdingsValue,
+      }
+    : null
+
   return {
     positions: portfolioData.positions,
-    activity: Array.from(activityById.values()).sort(
-      (left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
-    ),
+    activity,
+    accountSnapshot,
+    syncStats: {
+      positionsMapped: portfolioData.rowsMapped,
+      positionsStored: portfolioData.positions.length,
+      activityImported: activity.length,
+    },
   }
 }
 

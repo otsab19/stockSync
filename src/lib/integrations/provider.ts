@@ -1,5 +1,6 @@
 import type { PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 import type { BrokerApiCredentials } from "@/types/integrations"
+import type { BrokerAccountSnapshot, BrokerSyncStats } from "@/types/broker-account"
 import type { BrokerOrderResult, OrderCapability, OrderPreview, TradeOrderRequest } from "@/types/orders"
 
 export type BrokerInstrument = {
@@ -26,6 +27,8 @@ export type BrokerInstrumentQuote = {
 export type BrokerSyncResult = {
   positions: PortfolioPosition[]
   activity?: PortfolioActivityEvent[]
+  accountSnapshot?: BrokerAccountSnapshot | null
+  syncStats?: BrokerSyncStats
   message?: string
 }
 

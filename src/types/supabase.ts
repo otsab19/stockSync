@@ -46,6 +46,16 @@ export interface Database {
           is_enabled: boolean
           last_synced_at: string | null
           last_error: string | null
+          account_currency: string | null
+          available_cash: number | null
+          invested_amount: number | null
+          total_equity: number | null
+          holdings_value: number | null
+          unrealized_pl: number | null
+          realized_pl: number | null
+          last_positions_mapped: number | null
+          last_positions_stored: number | null
+          last_activity_imported: number | null
           created_at: string
           updated_at: string
         }
@@ -59,6 +69,16 @@ export interface Database {
           is_enabled?: boolean
           last_synced_at?: string | null
           last_error?: string | null
+          account_currency?: string | null
+          available_cash?: number | null
+          invested_amount?: number | null
+          total_equity?: number | null
+          holdings_value?: number | null
+          unrealized_pl?: number | null
+          realized_pl?: number | null
+          last_positions_mapped?: number | null
+          last_positions_stored?: number | null
+          last_activity_imported?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -72,6 +92,16 @@ export interface Database {
           is_enabled?: boolean
           last_synced_at?: string | null
           last_error?: string | null
+          account_currency?: string | null
+          available_cash?: number | null
+          invested_amount?: number | null
+          total_equity?: number | null
+          holdings_value?: number | null
+          unrealized_pl?: number | null
+          realized_pl?: number | null
+          last_positions_mapped?: number | null
+          last_positions_stored?: number | null
+          last_activity_imported?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -86,6 +116,8 @@ export interface Database {
           source_type: 'manual_csv' | 'broker_api'
           status: 'running' | 'succeeded' | 'failed'
           positions_imported: number
+          positions_mapped: number
+          activity_imported: number
           error_message: string | null
           started_at: string
           finished_at: string | null
@@ -99,6 +131,8 @@ export interface Database {
           source_type: 'manual_csv' | 'broker_api'
           status?: 'running' | 'succeeded' | 'failed'
           positions_imported?: number
+          positions_mapped?: number
+          activity_imported?: number
           error_message?: string | null
           started_at?: string
           finished_at?: string | null
@@ -112,6 +146,8 @@ export interface Database {
           source_type?: 'manual_csv' | 'broker_api'
           status?: 'running' | 'succeeded' | 'failed'
           positions_imported?: number
+          positions_mapped?: number
+          activity_imported?: number
           error_message?: string | null
           started_at?: string
           finished_at?: string | null

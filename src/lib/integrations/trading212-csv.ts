@@ -276,6 +276,7 @@ function parseTransactionRows(rows: ParsedRow[]): PortfolioPosition[] {
     .map((holding) => normalizeImportedHolding({
       broker: "t212",
       brokerLabel: "Trading 212",
+      externalPositionId: `ticker:${holding.ticker}`,
       ticker: holding.ticker,
       companyName: holding.companyName,
       shares: Number(holding.shares.toFixed(8)),
@@ -304,6 +305,7 @@ function parseHoldingRows(rows: ParsedRow[]): PortfolioPosition[] {
       return normalizeImportedHolding({
         broker: "t212",
         brokerLabel: "Trading 212",
+        externalPositionId: `ticker:${ticker}`,
         ticker,
         companyName,
         shares,
