@@ -16,6 +16,7 @@ import { buildSellPlLookup, filterActivityByDateRange, getDateRangeForPreset, su
 import { buildInsights, defaultFilterState, filterActivity, filterPortfolio, formatMoney, getDisplayProfit } from "@/lib/dashboard/filter-engine"
 import type { FilterState } from "@/lib/dashboard/filter-engine"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
+import { normalizePortfolioPositions } from "@/lib/portfolio/position-normalizer"
 import type { CurrencyMode, PortfolioApiResponse, PortfolioPosition } from "@/types/portfolio"
 
 type DashboardState = "loading" | "ready" | "setup_required" | "unauthorized" | "client_only" | "error"
@@ -149,7 +150,7 @@ function DashboardContent() {
       })
 
       setPortfolioResponse(data)
-      setPortfolio(data.portfolio)
+      setPortfolio(data.status === "ok" ? normalizePortfolioPositions(data.portfolio) : data.portfolio)
 
       if (data.status === "ok") {
         setDashboardState("ready")
@@ -216,7 +217,10 @@ function DashboardContent() {
   const activeBrokerFilterLabel = filters.brokers.length === 0 ? "all brokers" : filters.brokers.join(" + ")
   const totalValueLabel = formatMixedCurrencyTotals(filteredPortfolio, filters.currencyMode)
   const totalReturnLabel = formatMixedProfitTotals(filteredPortfolio, filters.currencyMode)
+  const isLoading = dashboardState === "loading"
+  const isBlockingError = dashboardState === "error" || dashboardState === "setup_required" || dashboardState === "unauthorized"
   const isEmptyState = dashboardState === "ready" && !hasPositions
+  const errorMessage = portfolioResponse?.message ?? "Unable to load portfolio data."
 
   return (
     <PageShell>
@@ -247,7 +251,41 @@ function DashboardContent() {
         }
       />
 
-      {isEmptyState ? (
+      {isLoading && !hasPositions ? (
+        <Card className="border-white/10 bg-white/[0.02]">
+          <CardHeader>
+            <CardTitle>Loading portfolio</CardTitle>
+            <CardDescription>Fetching holdings and activity from your connected brokers.</CardDescription>
+          </CardHeader>
+        </Card>
+      ) : isBlockingError && !hasPositions ? (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardHeader>
+            <CardTitle>
+              {dashboardState === "setup_required"
+                ? "Supabase setup required"
+                : dashboardState === "unauthorized"
+                  ? "Sign in required"
+                  : "Dashboard unavailable"}
+            </CardTitle>
+            <CardDescription>{errorMessage}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing}>
+              Try again
+            </Button>
+            {dashboardState === "unauthorized" ? (
+              <Link href="/settings" className="inline-flex h-8 items-center rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm transition-colors hover:bg-white/[0.06]">
+                Open settings
+              </Link>
+            ) : (
+              <Link href="/integrations" className="inline-flex h-8 items-center rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm transition-colors hover:bg-white/[0.06]">
+                Open broker connections
+              </Link>
+            )}
+          </CardContent>
+        </Card>
+      ) : isEmptyState ? (
         <Card className="border-dashed border-white/12 bg-white/[0.02]">
           <CardHeader>
             <CardTitle>No holdings loaded</CardTitle>

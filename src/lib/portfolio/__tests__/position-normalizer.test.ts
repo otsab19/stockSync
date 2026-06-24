@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { aggregatePositionsForStorage } from "@/lib/portfolio/position-normalizer"
+import { aggregatePositionsForStorage, normalizePortfolioPosition } from "@/lib/portfolio/position-normalizer"
 import type { PortfolioPosition } from "@/types/portfolio"
 
 function createPosition(overrides: Partial<PortfolioPosition> = {}): PortfolioPosition {
@@ -26,6 +26,21 @@ function createPosition(overrides: Partial<PortfolioPosition> = {}): PortfolioPo
     ...overrides,
   }
 }
+
+describe("normalizePortfolioPosition", () => {
+  it("backfills externalPositionId and id for legacy cached rows", () => {
+    const legacy = {
+      ...createPosition(),
+      id: "etoro-nvda",
+      externalPositionId: undefined as unknown as string,
+    }
+
+    const normalized = normalizePortfolioPosition(legacy)
+
+    expect(normalized.externalPositionId).toBe("ticker:NVDA")
+    expect(normalized.id).toBe("etoro-nvda")
+  })
+})
 
 describe("aggregatePositionsForStorage", () => {
   it("merges duplicate broker/ticker rows into one stored position", () => {

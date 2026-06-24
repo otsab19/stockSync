@@ -128,7 +128,7 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
                             <TableCell>
                               <div>
                                 <span className="font-medium">{position.ticker}</span>
-                                {position.externalPositionId.startsWith("position:") ? (
+                                {position.externalPositionId?.startsWith("position:") ? (
                                   <span className="ml-1.5 text-[0.6rem] text-muted-foreground">lot {position.externalPositionId.replace("position:", "")}</span>
                                 ) : null}
                                 <span className="ml-1.5 text-[0.65rem] text-muted-foreground">{position.companyName}</span>

@@ -1,5 +1,6 @@
 import type { PortfolioApiResponse } from "@/types/portfolio"
 import { createSuccessPortfolioResponse } from "@/lib/dashboard/portfolio-response"
+import { normalizePortfolioPositions } from "@/lib/portfolio/position-normalizer"
 import { loadBrowserPortfolioFromIndexedDb, replaceBrowserPortfolioInIndexedDb } from "@/lib/portfolio/browser-indexeddb"
 import type { ClientPortfolioRepository, ClientPortfolioRequestOptions } from "@/lib/portfolio/repository"
 
@@ -10,7 +11,7 @@ export class HttpApiPortfolioRepository implements ClientPortfolioRepository {
         const cached = await loadBrowserPortfolioFromIndexedDb()
         if (cached.positions.length > 0 || cached.activity.length > 0) {
           return createSuccessPortfolioResponse(
-            cached.positions,
+            normalizePortfolioPositions(cached.positions),
             "supabase",
             "browser_local",
             "Using cached portfolio data from this browser. Click Refresh to sync the latest trades from your brokers.",
@@ -31,8 +32,9 @@ export class HttpApiPortfolioRepository implements ClientPortfolioRepository {
     const data = (await response.json()) as PortfolioApiResponse
 
     if (data.status === "ok") {
-      await replaceBrowserPortfolioInIndexedDb(data.portfolio, data.activity, data.meta ?? null)
-      return data
+      const portfolio = normalizePortfolioPositions(data.portfolio)
+      await replaceBrowserPortfolioInIndexedDb(portfolio, data.activity, data.meta ?? null)
+      return { ...data, portfolio }
     }
 
     if (data.status === "client_only") {

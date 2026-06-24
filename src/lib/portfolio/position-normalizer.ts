@@ -61,6 +61,21 @@ export function inferAssetType(label: string, fallback: AssetType = "stock"): As
   return fallback
 }
 
+export function normalizePortfolioPosition(position: PortfolioPosition): PortfolioPosition {
+  const externalPositionId = position.externalPositionId?.trim() || `ticker:${position.ticker}`
+  const id = position.id || `${position.broker}-${externalPositionId}`
+
+  return {
+    ...position,
+    id,
+    externalPositionId,
+  }
+}
+
+export function normalizePortfolioPositions(positions: PortfolioPosition[]): PortfolioPosition[] {
+  return positions.map(normalizePortfolioPosition)
+}
+
 export function normalizeImportedHolding({
   broker,
   brokerLabel,

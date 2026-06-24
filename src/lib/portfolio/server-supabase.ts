@@ -6,9 +6,14 @@ import type { ServerPortfolioRepository } from "@/lib/portfolio/repository"
 import { normalizeImportedHolding } from "@/lib/portfolio/position-normalizer"
 import { createFailurePortfolioResponse, createSuccessPortfolioResponse } from "@/lib/dashboard/portfolio-response"
 
+const POSITION_SELECT_LEGACY = "broker, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at"
+const POSITION_SELECT_PHASE1 = `${POSITION_SELECT_LEGACY.replace("broker,", "broker, external_position_id,")}`
+const BROKER_CONNECTION_SELECT_LEGACY = "broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error"
+const BROKER_CONNECTION_SELECT_PHASE1 = `${BROKER_CONNECTION_SELECT_LEGACY}, account_currency, available_cash, invested_amount, total_equity, holdings_value, unrealized_pl, realized_pl, last_positions_mapped, last_positions_stored, last_activity_imported`
+
 type PositionRow = {
   broker: "t212" | "etoro"
-  external_position_id: string
+  external_position_id?: string
   ticker: string
   company_name: string
   shares: number | string
@@ -220,13 +225,13 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
     const [positionsResponse, connectionsResponse] = await Promise.all([
       supabase
         .from("positions")
-        .select("broker, external_position_id, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at")
+        .select(POSITION_SELECT_PHASE1)
         .eq("user_id", user.id)
         .order("broker")
         .order("ticker"),
       supabase
         .from("broker_connections")
-        .select("broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error, account_currency, available_cash, invested_amount, total_equity, holdings_value, unrealized_pl, realized_pl, last_positions_mapped, last_positions_stored, last_activity_imported")
+        .select(BROKER_CONNECTION_SELECT_PHASE1)
         .eq("user_id", user.id)
         .eq("is_enabled", true),
     ]) as unknown as [
@@ -234,7 +239,20 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
       { data: BrokerConnectionRow[] | null; error: Error | null },
     ]
 
-    const { data: positionRows, error: positionsError } = positionsResponse
+    let positionRows = positionsResponse.data
+    let positionsError = positionsResponse.error
+
+    if (positionsError) {
+      const legacyPositionsResponse = await supabase
+        .from("positions")
+        .select(POSITION_SELECT_LEGACY)
+        .eq("user_id", user.id)
+        .order("broker")
+        .order("ticker") as unknown as { data: PositionRow[] | null; error: Error | null }
+
+      positionRows = legacyPositionsResponse.data
+      positionsError = legacyPositionsResponse.error
+    }
 
     if (positionsError) {
       return createFailurePortfolioResponse(
@@ -245,7 +263,17 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
       )
     }
 
-    const connectionRows = connectionsResponse.error ? [] : (connectionsResponse.data ?? [])
+    let connectionRows = connectionsResponse.error ? [] : (connectionsResponse.data ?? [])
+
+    if (connectionsResponse.error) {
+      const legacyConnectionsResponse = await supabase
+        .from("broker_connections")
+        .select(BROKER_CONNECTION_SELECT_LEGACY)
+        .eq("user_id", user.id)
+        .eq("is_enabled", true) as unknown as { data: BrokerConnectionRow[] | null; error: Error | null }
+
+      connectionRows = legacyConnectionsResponse.error ? [] : (legacyConnectionsResponse.data ?? [])
+    }
 
     const { data: activityRows, error: activityError } = await supabase
       .from("activity_events")

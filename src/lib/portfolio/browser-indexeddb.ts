@@ -1,6 +1,7 @@
 import type { PortfolioActivityEvent, PortfolioApiResponse, PortfolioDataMeta, PortfolioPosition } from "@/types/portfolio"
 import type { ClientPortfolioRepository, ClientPortfolioRequestOptions } from "@/lib/portfolio/repository"
 import { createFailurePortfolioResponse, createSuccessPortfolioResponse } from "@/lib/dashboard/portfolio-response"
+import { normalizePortfolioPositions } from "@/lib/portfolio/position-normalizer"
 import type { BrokerApiCredentials, BrowserApiSyncResponse } from "@/types/integrations"
 
 const DB_NAME = "stocksync-browser-db"
@@ -348,7 +349,7 @@ async function readPortfolioFromIndexedDb(): Promise<PortfolioRecord> {
   if (existing?.positions && Array.isArray(existing.positions) && existing.positions.every(isPortfolioPositionRecord)) {
     return {
       id: DEFAULT_RECORD_KEY,
-      positions: existing.positions,
+      positions: normalizePortfolioPositions(existing.positions),
       activity: Array.isArray(existing.activity) ? existing.activity.filter(isPortfolioActivityRecord) : [],
       metadata: normalizeMetadata(existing.metadata, existing.positions),
     }
