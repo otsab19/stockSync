@@ -1159,6 +1159,78 @@ function flattenClientPortfolioRows(clientPortfolio: unknown): EtoroApiRow[] {
   return rows
 }
 
+function hasPositionSize(row: EtoroApiRow) {
+  return hasAnyValue(row, [
+    "quantity",
+    "Quantity",
+    "units",
+    "Units",
+    "AmountInUnits",
+    "amountInUnits",
+    "openUnits",
+    "OpenUnits",
+    "totalUnits",
+    "TotalUnits",
+    "amount",
+    "Amount",
+    "investment",
+    "Investment",
+    "investedAmount",
+    "InvestedAmount",
+    "openAmount",
+    "OpenAmount",
+    "currentValue",
+    "CurrentValue",
+    "marketValue",
+    "MarketValue",
+    "totalCost",
+    "TotalCost",
+  ])
+}
+
+function isLoosePositionLikeRow(row: EtoroApiRow) {
+  const hasInstrument = getEtoroInstrumentId(row) !== null || hasAnyValue(row, [
+    "instrument.ticker",
+    "instrument.symbol",
+    "instrument.displaySymbol",
+    "instrument.code",
+    "symbolFull",
+    "SymbolFull",
+    "internalSymbolFull",
+    "InternalSymbolFull",
+    "instrumentDisplayName",
+    "InstrumentDisplayName",
+    "ticker",
+    "symbol",
+    "market.symbol",
+    "InstrumentID",
+    "InstrumentId",
+    "instrumentId",
+    "instrumentID",
+    "positionID",
+    "PositionID",
+    "PositionId",
+    "positionId",
+  ])
+
+  if (!hasInstrument) {
+    return false
+  }
+
+  return hasPositionSize(row)
+    || getEtoroUnrealizedPlValue(row) !== null
+    || getNumberValue(row, ["netProfit", "NetProfit", "value", "Value"]) !== null
+}
+
+function filterPositionRecords(records: EtoroApiRow[]) {
+  const strictMatches = records.filter(isPositionLikeRow)
+  if (strictMatches.length > 0) {
+    return strictMatches
+  }
+
+  return records.filter(isLoosePositionLikeRow)
+}
+
 function isPositionLikeRow(row: EtoroApiRow) {
   const hasInstrument = getEtoroInstrumentId(row) !== null || hasAnyValue(row, [
     "instrument.ticker",
@@ -1184,33 +1256,12 @@ function isPositionLikeRow(row: EtoroApiRow) {
     "positionId",
   ])
 
-  const hasSize = hasAnyValue(row, [
-    "quantity",
-    "Quantity",
-    "units",
-    "Units",
-    "AmountInUnits",
-    "amountInUnits",
-    "openUnits",
-    "OpenUnits",
-    "totalUnits",
-    "TotalUnits",
-    "amount",
-    "Amount",
-  ])
-
-  return hasInstrument && hasSize
+  return hasInstrument && hasPositionSize(row)
 }
 
 function collectNestedRecords(value: unknown): EtoroApiRow[] {
   if (Array.isArray(value)) {
-    const records = value.filter(isRecord)
-
-    if (records.some(isPositionLikeRow)) {
-      return records.filter(isPositionLikeRow)
-    }
-
-    return []
+    return filterPositionRecords(value.filter(isRecord))
   }
 
   if (!isRecord(value)) {
@@ -1221,7 +1272,7 @@ function collectNestedRecords(value: unknown): EtoroApiRow[] {
     const candidate = value[key]
 
     if (Array.isArray(candidate)) {
-      const positionRecords = candidate.filter(isRecord).filter(isPositionLikeRow)
+      const positionRecords = filterPositionRecords(candidate.filter(isRecord))
 
       if (positionRecords.length > 0) {
         return positionRecords
@@ -1561,7 +1612,31 @@ function mapEtoroRowToPosition(
     ?? (totalCost !== null && unrealizedPlNative !== null ? totalCost + unrealizedPlNative : null)
     ?? (resolvedShares && livePrice ? resolvedShares * livePrice : null)
 
-  if (!ticker || resolvedShares === null || resolvedAveragePrice === null || livePrice === null || !currency || resolvedShares <= 0) {
+  let finalShares = resolvedShares
+  let finalAveragePrice = resolvedAveragePrice
+  let finalLivePrice = livePrice
+
+  if (totalCost !== null && totalCost > 0) {
+    const resolvedValue = nativeTotalValue ?? (totalCost + (unrealizedPlNative ?? 0))
+
+    if (finalLivePrice === null && resolvedValue > 0) {
+      finalLivePrice = resolvedValue
+    }
+
+    if (finalShares === null && finalLivePrice !== null && finalLivePrice > 0) {
+      finalShares = 1
+    }
+
+    if (finalAveragePrice === null && finalShares !== null && finalShares > 0) {
+      finalAveragePrice = totalCost / finalShares
+    }
+
+    if (finalLivePrice === null && finalAveragePrice !== null) {
+      finalLivePrice = finalAveragePrice
+    }
+  }
+
+  if (!ticker || finalShares === null || finalAveragePrice === null || finalLivePrice === null || !currency || finalShares <= 0) {
     return null
   }
 
@@ -1582,9 +1657,9 @@ function mapEtoroRowToPosition(
     externalPositionId,
     ticker: cleanedTicker,
     companyName: resolvedCompanyName,
-    shares: resolvedShares,
-    avgPrice: resolvedAveragePrice,
-    livePrice,
+    shares: finalShares,
+    avgPrice: finalAveragePrice,
+    livePrice: finalLivePrice,
     nativeCurrency: currency,
     assetType: metadata?.assetType ?? normalizeEtoroAssetType(row, resolvedCompanyName),
     fxRateToGbp,
@@ -1827,6 +1902,18 @@ type EtoroPortfolioData = {
   rowsMapped: number
 }
 
+function etoroAccountSnapshotIndicatesHoldings(
+  accountSnapshot: import("@/types/broker-account").BrokerAccountSnapshot | null
+) {
+  if (!accountSnapshot) {
+    return false
+  }
+
+  return (accountSnapshot.investedAmount ?? 0) > 0
+    || (accountSnapshot.holdingsValue ?? 0) > 0
+    || Math.abs(accountSnapshot.unrealizedPl ?? 0) > 0
+}
+
 async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCredentials): Promise<EtoroPortfolioData> {
   const { apiKey, apiSecret } = normalizeEtoroCredentials(credentials)
 
@@ -1860,9 +1947,9 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
     const payload = await response.json()
     payloads.push(payload)
     const rows = extractEtoroRows(payload)
+    logger.info({ broker: "etoro", path, rows: rows.length, status: response.status }, "eToro portfolio endpoint response")
     if (rows.length > 0) {
       rowGroups.push(rows)
-      logger.info({ broker: "etoro", path, rows: rows.length }, "Loaded eToro portfolio rows from endpoint")
     }
   }
 
@@ -1870,9 +1957,21 @@ async function fetchEtoroPortfolioDataFromApi(credentials?: string | BrokerApiCr
   const accountSnapshot = payloads.map(extractEtoroAccountSnapshot).find(Boolean) ?? null
   const instrumentIds = Array.from(new Set(mergedRows.map(getEtoroInstrumentId).filter((value): value is number => value !== null)))
 
-  logger.info({ broker: "etoro", rows: mergedRows.length, instrumentIds: instrumentIds.length }, "Loaded eToro portfolio rows")
+  logger.info({
+    broker: "etoro",
+    rows: mergedRows.length,
+    instrumentIds: instrumentIds.length,
+    investedAmount: accountSnapshot?.investedAmount ?? null,
+    paths: getEtoroPortfolioPaths(),
+  }, "Loaded eToro portfolio rows")
 
   if (mergedRows.length === 0) {
+    if (etoroAccountSnapshotIndicatesHoldings(accountSnapshot)) {
+      throw new Error(
+        `eToro reports ${accountSnapshot?.investedAmount ?? "invested"} capital but no open positions were parsed from the portfolio or PnL endpoints. Check production logs for per-endpoint row counts or set ETORO_PORTFOLIO_PATHS if your account uses a different API path.`
+      )
+    }
+
     if (attemptedResponses.length > 0) {
       throw new Error(
         `Failed to load the eToro portfolio from the API. Tried: ${attemptedResponses.join("; ")}. The documented real-account path is ${DEFAULT_ETORO_REAL_PORTFOLIO_PATH} on ${baseUrl}; if your account uses demo mode or a different documented path, set ETORO_ACCOUNT_MODE or ETORO_PORTFOLIO_PATHS.`

@@ -6,7 +6,43 @@ import type { BrokerConnectionSummary, SyncRunSummary, SyncStatusApiResponse } f
 type BrokerConnectionRow = Database["public"]["Tables"]["broker_connections"]["Row"]
 type SyncRunRow = Database["public"]["Tables"]["sync_runs"]["Row"]
 
-function mapConnection(row: BrokerConnectionRow): BrokerConnectionSummary {
+const BROKER_CONNECTION_SELECT_LEGACY = "id, broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error"
+const BROKER_CONNECTION_SELECT_PHASE1 = `${BROKER_CONNECTION_SELECT_LEGACY}, last_positions_mapped, last_positions_stored, last_activity_imported`
+const SYNC_RUN_SELECT_LEGACY = "id, connection_id, broker, trigger, source_type, status, positions_imported, error_message, started_at, finished_at"
+const SYNC_RUN_SELECT_PHASE1 = `${SYNC_RUN_SELECT_LEGACY}, positions_mapped, activity_imported`
+
+type BrokerConnectionQueryRow = Pick<
+  BrokerConnectionRow,
+  | "id"
+  | "broker"
+  | "source_type"
+  | "sync_mode"
+  | "sync_status"
+  | "is_enabled"
+  | "last_synced_at"
+  | "last_error"
+  | "last_positions_mapped"
+  | "last_positions_stored"
+  | "last_activity_imported"
+>
+
+type SyncRunQueryRow = Pick<
+  SyncRunRow,
+  | "id"
+  | "connection_id"
+  | "broker"
+  | "trigger"
+  | "source_type"
+  | "status"
+  | "positions_imported"
+  | "positions_mapped"
+  | "activity_imported"
+  | "error_message"
+  | "started_at"
+  | "finished_at"
+>
+
+function mapConnection(row: BrokerConnectionQueryRow): BrokerConnectionSummary {
   return {
     id: row.id,
     broker: row.broker,
@@ -16,13 +52,13 @@ function mapConnection(row: BrokerConnectionRow): BrokerConnectionSummary {
     isEnabled: row.is_enabled,
     lastSyncedAt: row.last_synced_at,
     lastError: row.last_error,
-    lastPositionsMapped: row.last_positions_mapped,
-    lastPositionsStored: row.last_positions_stored,
-    lastActivityImported: row.last_activity_imported,
+    lastPositionsMapped: row.last_positions_mapped ?? null,
+    lastPositionsStored: row.last_positions_stored ?? null,
+    lastActivityImported: row.last_activity_imported ?? null,
   }
 }
 
-function mapRun(row: SyncRunRow): SyncRunSummary {
+function mapRun(row: SyncRunQueryRow): SyncRunSummary {
   return {
     id: row.id,
     connectionId: row.connection_id,
@@ -37,6 +73,21 @@ function mapRun(row: SyncRunRow): SyncRunSummary {
     activityImported: row.activity_imported ?? 0,
     errorMessage: row.error_message,
   }
+}
+
+function buildSyncStatusErrorMessage(connectionError: Error | null, runsError: Error | null) {
+  const detail = connectionError?.message ?? runsError?.message ?? "Unknown Supabase error."
+  const normalized = detail.toLowerCase()
+
+  if (normalized.includes("does not exist") || normalized.includes("relation")) {
+    return "The broker sync tables are not ready yet. Apply the Supabase migrations (at least the initial schema) so broker_connections and sync_runs exist."
+  }
+
+  if (normalized.includes("column")) {
+    return "Broker sync tables are missing newer columns. Apply the Phase 1 migration (20260622120000_phase1_lot_positions_and_account_snapshots.sql) in Supabase."
+  }
+
+  return `Unable to load broker sync status from Supabase: ${detail}`
 }
 
 export class SupabaseSyncStatusRepository implements SyncStatusRepository {
@@ -70,17 +121,47 @@ export class SupabaseSyncStatusRepository implements SyncStatusRepository {
       }
     }
 
-    const [connectionsResponse, runsResponse] = await Promise.all([
-      supabase
+    let connectionsResponse = await supabase
+      .from("broker_connections")
+      .select(BROKER_CONNECTION_SELECT_PHASE1)
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false }) as unknown as {
+      data: BrokerConnectionQueryRow[] | null
+      error: Error | null
+    }
+
+    if (connectionsResponse.error) {
+      connectionsResponse = await supabase
         .from("broker_connections")
-        .select("id, broker, source_type, sync_mode, sync_status, is_enabled, last_synced_at, last_error, last_positions_mapped, last_positions_stored, last_activity_imported")
-        .order("updated_at", { ascending: false }),
-      supabase
+        .select(BROKER_CONNECTION_SELECT_LEGACY)
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false }) as unknown as {
+        data: BrokerConnectionQueryRow[] | null
+        error: Error | null
+      }
+    }
+
+    let runsResponse = await supabase
+      .from("sync_runs")
+      .select(SYNC_RUN_SELECT_PHASE1)
+      .eq("user_id", user.id)
+      .order("started_at", { ascending: false })
+      .limit(10) as unknown as {
+      data: SyncRunQueryRow[] | null
+      error: Error | null
+    }
+
+    if (runsResponse.error) {
+      runsResponse = await supabase
         .from("sync_runs")
-        .select("id, connection_id, broker, trigger, source_type, status, positions_imported, positions_mapped, activity_imported, error_message, started_at, finished_at")
+        .select(SYNC_RUN_SELECT_LEGACY)
+        .eq("user_id", user.id)
         .order("started_at", { ascending: false })
-        .limit(10),
-    ])
+        .limit(10) as unknown as {
+        data: SyncRunQueryRow[] | null
+        error: Error | null
+      }
+    }
 
     if (connectionsResponse.error || runsResponse.error) {
       return {
@@ -89,8 +170,7 @@ export class SupabaseSyncStatusRepository implements SyncStatusRepository {
         supportsScheduledSync: true,
         connections: [],
         recentRuns: [],
-        message:
-          "The broker sync tables are not ready yet. Apply the latest Supabase migration so broker_connections and sync_runs exist.",
+        message: buildSyncStatusErrorMessage(connectionsResponse.error, runsResponse.error),
       }
     }
 
@@ -110,4 +190,3 @@ export class SupabaseSyncStatusRepository implements SyncStatusRepository {
     }
   }
 }
-

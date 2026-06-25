@@ -193,7 +193,9 @@ export function SyncStatusCard() {
             <p className="mt-2 text-xs">Browser mode still supports local broker syncing even while server-backed sync is unavailable.</p>
           ) : null}
           {!loading && response?.status === "error" ? (
-            <p className="mt-2 text-xs">If this persists, verify the sync tables exist and that the server can reach Supabase.</p>
+            <p className="mt-2 text-xs">
+              If this persists, run <code className="rounded bg-white/5 px-1 py-0.5">supabase db push</code> against your project so broker_connections, sync_runs, and the Phase 1 columns exist.
+            </p>
           ) : null}
         </div>
 

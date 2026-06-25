@@ -231,7 +231,9 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
               apiKey: profile.t212_api_key,
               apiSecret: profile.t212_api_secret ?? "",
             })
-            await recordScheduledPositions(supabase, profile.id, "t212", pos)
+            if (pos.length > 0) {
+              await recordScheduledPositions(supabase, profile.id, "t212", pos)
+            }
             positions.push(...pos)
           } catch (error) {
             syncErrors.push(`Trading 212 sync failed for ${profile.id}: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -247,7 +249,9 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
               apiKey: profile.etoro_api_key,
               apiSecret: profile.etoro_api_secret ?? "",
             })
-            await recordScheduledPositions(supabase, profile.id, "etoro", pos)
+            if (pos.length > 0) {
+              await recordScheduledPositions(supabase, profile.id, "etoro", pos)
+            }
             positions.push(...pos)
           } catch (error) {
             syncErrors.push(`eToro sync failed for ${profile.id}: ${error instanceof Error ? error.message : "Unknown error"}`)

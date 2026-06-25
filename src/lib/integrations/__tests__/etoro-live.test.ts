@@ -619,6 +619,31 @@ describe("eToro live mapper", () => {
     expect(positions[0]?.totalPL).toBeCloseTo(42.5 * 0.79, 2)
   })
 
+  it("maps PnL positions that only expose investment and unrealizedPnL", () => {
+    const payload = {
+      clientPortfolio: {
+        positions: [
+          {
+            positionID: 9002,
+            instrumentID: 1137,
+            symbolFull: "NVDA",
+            instrumentDisplayName: "NVIDIA Corporation",
+            isBuy: true,
+            leverage: 1,
+            investment: 820.72,
+            unrealizedPnL: { pnL: 42.5 },
+          },
+        ],
+      },
+    }
+
+    const positions = mapEtoroPortfolioResponse(payload)
+
+    expect(positions).toHaveLength(1)
+    expect(positions[0]?.ticker).toBe("NVDA")
+    expect(positions[0]?.nativeTotalValue).toBeCloseTo(863.22, 2)
+  })
+
   it("dedupes duplicate eToro position IDs before mapping", () => {
     const payload = {
       clientPortfolio: {

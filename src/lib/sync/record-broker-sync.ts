@@ -48,6 +48,16 @@ function resolveAccountSnapshot(
   }
 }
 
+function accountSnapshotIndicatesHoldings(accountSnapshot: BrokerAccountSnapshot | null) {
+  if (!accountSnapshot) {
+    return false
+  }
+
+  return (accountSnapshot.investedAmount ?? 0) > 0
+    || (accountSnapshot.holdingsValue ?? 0) > 0
+    || Math.abs(accountSnapshot.unrealizedPl ?? 0) > 0
+}
+
 export async function recordBrokerSyncFailure(
   writer: SupabaseWriter,
   userId: string,
@@ -108,15 +118,23 @@ export async function recordBrokerSync(
   const positionsMapped = options.syncStats?.positionsMapped ?? normalizedPositions.length
   const positionsStored = normalizedPositions.length
   const activityImported = options.syncStats?.activityImported ?? activity?.length ?? 0
+  const brokerLabel = broker === "etoro" ? "eToro" : "Trading 212"
+  const accountIndicatesHoldings = accountSnapshotIndicatesHoldings(accountSnapshot)
+  const preserveStoredHoldings = positionsStored === 0 && accountIndicatesHoldings
+  const emptySyncWarning = positionsStored === 0
+    ? preserveStoredHoldings
+      ? `${brokerLabel} reports invested capital but no open positions were parsed. Existing holdings were preserved.`
+      : `${brokerLabel} returned no open positions during sync. Existing holdings were preserved.`
+    : null
 
   const connectionPayload: Record<string, unknown> = {
     user_id: userId,
     broker,
     source_type: "broker_api",
-    sync_status: "succeeded",
+    sync_status: positionsStored === 0 ? "failed" : "succeeded",
     is_enabled: true,
     last_synced_at: now,
-    last_error: null,
+    last_error: emptySyncWarning,
     updated_at: now,
     account_currency: accountSnapshot?.currency ?? null,
     available_cash: accountSnapshot?.availableCash ?? null,
@@ -148,12 +166,13 @@ export async function recordBrokerSync(
     broker,
     trigger: options.trigger ?? "manual",
     source_type: "broker_api",
-    status: "succeeded",
+    status: positionsStored === 0 ? "failed" : "succeeded",
     positions_imported: positionsStored,
     positions_mapped: positionsMapped,
     activity_imported: activityImported,
     started_at: now,
     finished_at: now,
+    error_message: emptySyncWarning,
   })).error,
     "Failed to record sync run"
   )
@@ -191,9 +210,9 @@ export async function recordBrokerSync(
       `Failed to remove stale ${broker} positions`
     )
   } else {
-    await assertNoSupabaseError(
-      (await writer.from("positions").delete().eq("user_id", userId).eq("broker", broker)).error,
-      "Failed to clear existing broker positions"
+    logger.warn(
+      { broker, userId, positionsMapped, positionsStored, accountIndicatesHoldings },
+      "Broker sync returned no positions; preserving existing stored holdings"
     )
   }
 
