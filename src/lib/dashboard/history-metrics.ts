@@ -4,11 +4,15 @@ import {
   summarizeActivityPeriod,
 } from "@/lib/dashboard/activity-view"
 import {
+  buildBrokerReportedClosedCycles,
+  resolveBrokerRealisedPlGbp,
+  resolveTotalRealisedPlGbp,
+} from "@/lib/dashboard/realised-pl"
+import {
   buildTradeCycles,
-  groupTradeCyclesByBroker,
   groupTradeCyclesByStock,
-  sumClosedCycleRealisedPlGbp,
 } from "@/lib/dashboard/trade-cycles"
+import type { BrokerAccountSnapshot } from "@/types/broker-account"
 import type { BrokerId, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 
 export type OpenPositionMetrics = {
@@ -91,19 +95,26 @@ export function buildOpenPositionMetrics(portfolio: PortfolioPosition[]): OpenPo
   }
 }
 
-export function buildHistoryTradeMetrics(activity: PortfolioActivityEvent[]): HistoryTradeMetrics {
-  const cycles = buildTradeCycles(activity)
-  const closedCycles = cycles.filter((cycle) => cycle.sell && cycle.plGbp !== null)
-  const realisedPlGbp = sumClosedCycleRealisedPlGbp(activity)
+export function buildHistoryTradeMetrics(
+  activity: PortfolioActivityEvent[],
+  options?: {
+    brokerAccounts?: Array<BrokerAccountSnapshot | null | undefined>
+    preferAccountSnapshots?: boolean
+  }
+): HistoryTradeMetrics {
+  const closedCycles = buildBrokerReportedClosedCycles(activity)
+  const realisedPlGbp = resolveTotalRealisedPlGbp(activity, options)
   const sellPlLookup = buildSellPlLookup(activity)
-  const periodSummary = summarizeActivityPeriod(activity, sellPlLookup)
+  const periodSummary = summarizeActivityPeriod(activity, sellPlLookup, options)
 
   const closedCostBasisGbp = closedCycles.reduce((sum, cycle) => {
-    if (!cycle.sell || cycle.plGbp === null) return sum
-    return sum + closedCycleCostBasisGbp(cycle.sell, cycle.plGbp)
+    const sell = cycle.sell
+    const plGbp = sell?.realisedProfitGbp
+    if (!sell || plGbp === undefined) return sum
+    return sum + closedCycleCostBasisGbp(sell, plGbp)
   }, 0)
 
-  const winningTrades = closedCycles.filter((cycle) => (cycle.plGbp ?? 0) > 0).length
+  const winningTrades = closedCycles.filter((cycle) => (cycle.sell?.realisedProfitGbp ?? 0) > 0).length
 
   return {
     realisedPlGbp,
@@ -119,8 +130,14 @@ export function buildHistoryTradeMetrics(activity: PortfolioActivityEvent[]): Hi
 
 export function buildBrokerPerformanceBreakdown(
   portfolio: PortfolioPosition[],
-  activity: PortfolioActivityEvent[]
+  activity: PortfolioActivityEvent[],
+  options?: {
+    brokerAccounts?: Array<BrokerAccountSnapshot | null | undefined>
+    preferAccountSnapshots?: boolean
+  }
 ): BrokerPerformanceBreakdown[] {
+  const brokerAccounts = options?.brokerAccounts ?? []
+  const preferAccountSnapshots = options?.preferAccountSnapshots ?? false
   const brokerLabels = new Map<BrokerId, string>()
   portfolio.forEach((position) => brokerLabels.set(position.broker, position.brokerLabel))
   activity.forEach((event) => brokerLabels.set(event.broker, event.brokerLabel))
@@ -133,8 +150,16 @@ export function buildBrokerPerformanceBreakdown(
     openByBroker.set(position.broker, current)
   })
 
-  const realisedByBroker = new Map(
-    groupTradeCyclesByBroker(buildTradeCycles(activity)).map((group) => [group.key as BrokerId, group.netPlGbp])
+  const realisedByBroker = new Map<BrokerId, number>(
+    Array.from(brokerLabels.keys()).map((broker) => [
+      broker,
+      resolveBrokerRealisedPlGbp(
+        broker,
+        activity,
+        brokerAccounts.find((account) => account?.broker === broker),
+        preferAccountSnapshots
+      ),
+    ])
   )
 
   return Array.from(brokerLabels.entries())
@@ -153,12 +178,16 @@ export function buildBrokerPerformanceBreakdown(
 
 export function buildHistoryPerformanceMetrics(
   portfolio: PortfolioPosition[],
-  activity: PortfolioActivityEvent[]
+  activity: PortfolioActivityEvent[],
+  options?: {
+    brokerAccounts?: Array<BrokerAccountSnapshot | null | undefined>
+    preferAccountSnapshots?: boolean
+  }
 ): HistoryPerformanceMetrics {
   return {
     open: buildOpenPositionMetrics(portfolio),
-    history: buildHistoryTradeMetrics(activity),
-    brokers: buildBrokerPerformanceBreakdown(portfolio, activity),
+    history: buildHistoryTradeMetrics(activity, options),
+    brokers: buildBrokerPerformanceBreakdown(portfolio, activity, options),
   }
 }
 
@@ -167,15 +196,14 @@ export function buildCumulativeRealisedPlSeries(
 ): CumulativeRealisedPlPoint[] {
   const byDay = new Map<string, { timestamp: string; realisedPlGbp: number }>()
 
-  buildTradeCycles(activity)
-    .filter((cycle) => cycle.sell && cycle.plGbp !== null)
+  buildBrokerReportedClosedCycles(activity)
     .forEach((cycle) => {
       const sell = cycle.sell!
       const day = new Date(sell.timestamp)
       day.setHours(0, 0, 0, 0)
       const key = day.toISOString()
       const current = byDay.get(key) ?? { timestamp: key, realisedPlGbp: 0 }
-      current.realisedPlGbp += cycle.plGbp ?? 0
+      current.realisedPlGbp += sell.realisedProfitGbp ?? 0
       byDay.set(key, current)
     })
 

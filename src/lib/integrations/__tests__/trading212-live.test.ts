@@ -188,6 +188,26 @@ describe("Trading 212 live mapper", () => {
     expect(activity.reduce((sum, event) => sum + (event.realisedProfitGbp ?? 0), 0)).toBe(25)
   })
 
+  it("skips cancelled sell orders that never received a fill", () => {
+    const activity = mapTrading212HistoryItemsToActivity([
+      {
+        order: {
+          id: 53113132861,
+          side: "SELL",
+          type: "LIMIT",
+          status: "CANCELLED",
+          quantity: -210,
+          filledQuantity: 0,
+          limitPrice: 46.5,
+          createdAt: "2026-06-23T17:36:47.000Z",
+          instrument: { ticker: "APLD_US_EQ", currency: "USD", name: "Applied Digital" },
+        },
+      },
+    ])
+
+    expect(activity).toHaveLength(0)
+  })
+
   it("does not attach realised p/l to buy legs", () => {
     const activity = mapTrading212HistoryItemsToActivity([
       {

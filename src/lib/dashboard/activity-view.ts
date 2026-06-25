@@ -1,4 +1,6 @@
-import { buildTradeCycles, sumClosedCycleRealisedPlGbp } from "@/lib/dashboard/trade-cycles"
+import { buildTradeCycles } from "@/lib/dashboard/trade-cycles"
+import { resolveTotalRealisedPlGbp } from "@/lib/dashboard/realised-pl"
+import type { BrokerAccountSnapshot } from "@/types/broker-account"
 import type { BrokerId, PortfolioActivityEvent } from "@/types/portfolio"
 
 export type ActivityDatePreset = "today" | "yesterday" | "this-week" | "this-month" | "last-7d" | "last-30d" | "custom"
@@ -139,8 +141,10 @@ export function filterActivityByDateRange(
 export function buildSellPlLookup(activity: PortfolioActivityEvent[]) {
   const lookup = new Map<string, number | null>()
 
-  buildTradeCycles(activity).forEach((cycle) => {
-    if (cycle.sell) lookup.set(cycle.sell.id, cycle.plGbp)
+  activity.forEach((event) => {
+    if (event.realisedProfitGbp !== undefined) {
+      lookup.set(event.id, event.realisedProfitGbp)
+    }
   })
 
   return lookup
@@ -225,7 +229,11 @@ export function groupActivityByTickerAndBroker(
 
 export function summarizeActivityPeriod(
   activity: PortfolioActivityEvent[],
-  sellPlLookup: Map<string, number | null> = new Map()
+  sellPlLookup: Map<string, number | null> = new Map(),
+  options?: {
+    brokerAccounts?: Array<BrokerAccountSnapshot | null | undefined>
+    preferAccountSnapshots?: boolean
+  }
 ): ActivityPeriodSummary {
   let buyCount = 0
   let sellCount = 0
@@ -248,7 +256,7 @@ export function summarizeActivityPeriod(
     sellCount,
     totalBoughtGbp,
     totalSoldGbp,
-    totalRealisedPlGbp: sumClosedCycleRealisedPlGbp(activity),
+    totalRealisedPlGbp: resolveTotalRealisedPlGbp(activity, options),
   }
 }
 

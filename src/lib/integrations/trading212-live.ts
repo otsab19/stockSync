@@ -668,7 +668,7 @@ export async function fetchTrading212CashActivityFromApi(credentials?: string | 
 }
 
 function normalizeTrading212ActivityType(row: Trading212ApiRow, quantity: number) {
-  const explicitType = getStringValue(row, ["order.side", "side", "type", "order.type", "orderType", "status"])?.toLowerCase()
+  const explicitType = getStringValue(row, ["order.side", "side", "type", "order.type", "orderType"])?.toLowerCase()
 
   if (explicitType?.includes("sell")) {
     return "sell" as const
@@ -681,7 +681,46 @@ function normalizeTrading212ActivityType(row: Trading212ApiRow, quantity: number
   return quantity < 0 ? "sell" as const : "buy" as const
 }
 
+function isUnfilledTrading212OrderRow(row: Trading212ApiRow) {
+  const status = getStringValue(row, ["order.status", "status"])?.toUpperCase()
+  if (status === "CANCELLED" || status === "REJECTED" || status === "EXPIRED") {
+    return true
+  }
+
+  const fillQuantity = getNumberValue(row, ["fill.quantity"])
+  const filledQuantity = getNumberValue(row, ["order.filledQuantity", "filledQuantity"])
+  const legacyQuantity = getNumberValue(row, ["quantity", "qty"])
+
+  if (fillQuantity !== null && Math.abs(fillQuantity) > 0) {
+    return false
+  }
+
+  if (filledQuantity !== null && Math.abs(filledQuantity) > 0) {
+    return false
+  }
+
+  if (legacyQuantity !== null && Math.abs(legacyQuantity) > 0) {
+    const hasExecutionTimestamp = Boolean(getStringValue(row, [
+      "fill.filledAt",
+      "fill.executedAt",
+      "filledOn",
+      "executedOn",
+      "executedAt",
+      "dateExecuted",
+    ]))
+    if (hasExecutionTimestamp) {
+      return false
+    }
+  }
+
+  return true
+}
+
 function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivityEvent | null {
+  if (isUnfilledTrading212OrderRow(row)) {
+    return null
+  }
+
   // T212 API returns nested { order: {...}, fill: {...} } structure
   const timestamp = getStringValue(row, [
     "fill.filledAt",
@@ -698,7 +737,6 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
   const rawQuantity = getNumberValue(row, [
     "fill.quantity",
     "order.filledQuantity",
-    "order.quantity",
     "quantity",
     "filledQuantity",
     "qty",
@@ -710,8 +748,6 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
     "filledPrice",
     "averagePrice",
     "price",
-    "order.limitPrice",
-    "limitPrice",
   ])
   const ticker = getStringValue(row, [
     "order.instrument.ticker",
@@ -782,6 +818,12 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
   const realisedPL = getNumberValue(row, [
     "fill.walletImpact.realisedProfitLoss",
     "fill.walletImpact.realizedProfitLoss",
+    "fill.walletImpact.result",
+    "fill.walletImpact.profit",
+    "walletImpact.realisedProfitLoss",
+    "walletImpact.realizedProfitLoss",
+    "walletImpact.result",
+    "walletImpact.profit",
   ])
   const realisedProfitGbp = activityType === "sell" && realisedPL !== null
     ? convertTrading212WalletAmountToGbp(

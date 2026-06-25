@@ -406,18 +406,30 @@ export default function DashboardHistoryPage() {
     return filteredActivity
   }, [filteredActivity, filters.quickFilter, tickerSummaries])
 
+  const brokerAccounts = useMemo(
+    () => (portfolioResponse?.meta?.brokerDetails ?? []).map((detail) => detail.account).filter(Boolean),
+    [portfolioResponse]
+  )
+  const preferAccountSnapshots = filters.timeRange === "all"
+
   const performanceMetrics = useMemo(
-    () => buildHistoryPerformanceMetrics(filteredPortfolio, filteredActivity),
-    [filteredActivity, filteredPortfolio]
+    () => buildHistoryPerformanceMetrics(filteredPortfolio, filteredActivity, {
+      brokerAccounts,
+      preferAccountSnapshots,
+    }),
+    [brokerAccounts, filteredActivity, filteredPortfolio, preferAccountSnapshots]
   )
   const cumulativePlSeries = useMemo(() => buildCumulativeRealisedPlSeries(filteredActivity), [filteredActivity])
   const brokerBreakdown = useMemo(
-    () => buildBrokerPerformanceBreakdown(filteredPortfolio, filteredActivity),
-    [filteredActivity, filteredPortfolio]
+    () => buildBrokerPerformanceBreakdown(filteredPortfolio, filteredActivity, {
+      brokerAccounts,
+      preferAccountSnapshots,
+    }),
+    [brokerAccounts, filteredActivity, filteredPortfolio, preferAccountSnapshots]
   )
   const monthlyPl = useMemo(() => buildMonthlyRealisedPl(filteredActivity), [filteredActivity])
   const closedTradeCycles = useMemo(
-    () => buildTradeCycles(filteredActivity).filter((cycle) => cycle.sell && cycle.plGbp !== null),
+    () => buildTradeCycles(filteredActivity).filter((cycle) => cycle.sell?.realisedProfitGbp !== undefined),
     [filteredActivity]
   )
 

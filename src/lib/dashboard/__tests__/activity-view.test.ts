@@ -101,15 +101,15 @@ describe("activity view", () => {
     })
   })
 
-  it("derives sell p/l from trade cycles when broker profit is missing", () => {
+  it("does not infer sell p/l from fifo when broker profit is missing", () => {
     const activity = [
       makeEvent({ id: "t212:buy-1", type: "buy", timestamp: "2026-06-01T09:00:00Z", grossAmountGbp: 100 }),
       makeEvent({ id: "t212:sell-1", type: "sell", timestamp: "2026-06-01T12:00:00Z", grossAmountGbp: 130 }),
     ]
     const lookup = buildSellPlLookup(activity)
 
-    expect(getSellPlGbp(activity[1]!, lookup)).toBe(30)
-    expect(summarizeActivityPeriod(activity, lookup).totalRealisedPlGbp).toBe(30)
+    expect(getSellPlGbp(activity[1]!, lookup)).toBeNull()
+    expect(summarizeActivityPeriod(activity, lookup).totalRealisedPlGbp).toBe(0)
   })
 
   it("filters by local calendar date rather than raw timestamp bounds", () => {

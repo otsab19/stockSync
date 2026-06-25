@@ -82,12 +82,12 @@ describe("history metrics", () => {
     expect(brokerRealisedTotal).toBe(50)
   })
 
-  it("computes realised p/l and win rate from trade cycles", () => {
+  it("computes realised p/l and win rate from broker-reported sell p/l", () => {
     const activity = [
       makeEvent({ id: "buy-1", type: "buy", grossAmountGbp: 100, timestamp: "2026-06-01T09:00:00Z" }),
-      makeEvent({ id: "sell-1", type: "sell", grossAmountGbp: 130, timestamp: "2026-06-02T09:00:00Z" }),
+      makeEvent({ id: "sell-1", type: "sell", grossAmountGbp: 130, realisedProfitGbp: 30, timestamp: "2026-06-02T09:00:00Z" }),
       makeEvent({ id: "buy-2", type: "buy", grossAmountGbp: 80, timestamp: "2026-06-03T09:00:00Z" }),
-      makeEvent({ id: "sell-2", type: "sell", grossAmountGbp: 70, timestamp: "2026-06-04T09:00:00Z" }),
+      makeEvent({ id: "sell-2", type: "sell", grossAmountGbp: 70, realisedProfitGbp: -10, timestamp: "2026-06-04T09:00:00Z" }),
     ]
 
     const history = buildHistoryTradeMetrics(activity)
@@ -99,12 +99,35 @@ describe("history metrics", () => {
     expect(history.totalSoldGbp).toBe(200)
   })
 
+  it("uses broker account snapshots for all-time realised p/l when available", () => {
+    const activity = [
+      makeEvent({ id: "t212:sell-1", type: "sell", grossAmountGbp: 130, realisedProfitGbp: 30, timestamp: "2026-06-02T09:00:00Z" }),
+      makeEvent({ id: "etoro:1137:close:2026-06-02T09:00:00Z:110", type: "sell", broker: "etoro", brokerLabel: "eToro", orderType: "Close", grossAmountGbp: 120, realisedProfitGbp: 20, timestamp: "2026-06-02T09:00:00Z" }),
+    ]
+
+    const history = buildHistoryTradeMetrics(activity, {
+      preferAccountSnapshots: true,
+      brokerAccounts: [{
+        broker: "t212",
+        currency: "GBP",
+        availableCash: 100,
+        investedAmount: 1000,
+        totalEquity: 1100,
+        holdingsValue: 1000,
+        unrealizedPl: -50,
+        realizedPl: 455.44,
+      }],
+    })
+
+    expect(history.realisedPlGbp).toBeCloseTo(475.44, 2)
+  })
+
   it("builds cumulative realised p/l series by sell date", () => {
     const activity = [
       makeEvent({ id: "buy-1", type: "buy", grossAmountGbp: 100, timestamp: "2026-06-01T09:00:00Z" }),
-      makeEvent({ id: "sell-1", type: "sell", grossAmountGbp: 120, timestamp: "2026-06-01T15:00:00Z" }),
+      makeEvent({ id: "sell-1", type: "sell", grossAmountGbp: 120, realisedProfitGbp: 20, timestamp: "2026-06-01T15:00:00Z" }),
       makeEvent({ id: "buy-2", type: "buy", grossAmountGbp: 50, timestamp: "2026-06-02T09:00:00Z" }),
-      makeEvent({ id: "sell-2", type: "sell", grossAmountGbp: 40, timestamp: "2026-06-03T09:00:00Z" }),
+      makeEvent({ id: "sell-2", type: "sell", grossAmountGbp: 40, realisedProfitGbp: -10, timestamp: "2026-06-03T09:00:00Z" }),
     ]
 
     const series = buildCumulativeRealisedPlSeries(activity)
