@@ -2,7 +2,7 @@ import { fetchTrading212AccountSummaryFromApi } from "@/lib/integrations/trading
 import type { BrokerAccountSnapshot } from "@/types/broker-account"
 import type { SupabaseWriter } from "@/lib/sync/record-broker-sync"
 
-type BrokerConnectionRow = {
+type BrokerConnectionSnapshotFields = {
   broker: "t212" | "etoro"
   source_type: "manual_csv" | "broker_api"
   account_currency: string | null
@@ -32,12 +32,12 @@ function snapshotToConnectionPatch(snapshot: BrokerAccountSnapshot) {
   }
 }
 
-export async function refreshMissingBrokerAccountSnapshots(
+export async function refreshMissingBrokerAccountSnapshots<T extends BrokerConnectionSnapshotFields>(
   writer: SupabaseWriter,
   userId: string,
   profile: ProfileCredentials | null,
-  connections: BrokerConnectionRow[]
-): Promise<BrokerConnectionRow[]> {
+  connections: T[]
+): Promise<T[]> {
   const nextConnections = [...connections]
 
   for (let index = 0; index < nextConnections.length; index += 1) {
@@ -79,7 +79,7 @@ export async function refreshMissingBrokerAccountSnapshots(
       holdings_value: patch.holdings_value ?? connection.holdings_value,
       unrealized_pl: patch.unrealized_pl ?? connection.unrealized_pl,
       realized_pl: patch.realized_pl ?? connection.realized_pl,
-    }
+    } as T
   }
 
   return nextConnections
