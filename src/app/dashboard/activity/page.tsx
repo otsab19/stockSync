@@ -17,13 +17,16 @@ import {
   formatDateInputValue,
   formatDateRangeLabel,
   getDateRangeForPreset,
+  getEarliestActivityDate,
   getSellPlGbp,
   parseDateInputValue,
+  rangeCoversAllTradeActivity,
   splitActivityBySide,
   startOfDay,
   summarizeActivityPeriod,
   type ActivityDatePreset,
 } from "@/lib/dashboard/activity-view"
+import type { BrokerAccountSnapshot } from "@/types/broker-account"
 import { formatMoney } from "@/lib/dashboard/filter-engine"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
 import { cn } from "@/lib/utils"
@@ -39,6 +42,8 @@ const presetLabels: Record<ActivityDatePreset, string> = {
   yesterday: "Yesterday",
   "this-week": "This week",
   "this-month": "This month",
+  "this-year": "This year",
+  "since-start": "Since start",
   "last-7d": "Last 7 days",
   "last-30d": "Last 30 days",
   custom: "Custom",
@@ -205,7 +210,7 @@ function ActivityTable({
                         <div><span className="block uppercase tracking-[0.16em]">Order type</span><span className="mt-1 block text-foreground">{event.orderType || "Not provided"}</span></div>
                         <div><span className="block uppercase tracking-[0.16em]">Native amount</span><span className="mt-1 block text-foreground">{formatTradePrice(event.grossAmount, event.nativeCurrency)}</span></div>
                         <div><span className="block uppercase tracking-[0.16em]">GBP amount</span><span className="mt-1 block text-foreground">{formatMoney(event.grossAmountGbp, "GBP")}</span></div>
-                        <div><span className="block uppercase tracking-[0.16em]">P/L source</span><span className="mt-1 block text-foreground">{event.realisedProfitGbp !== undefined ? "Broker reported" : side === "sell" ? "FIFO estimate" : "Not applicable"}</span></div>
+                        <div><span className="block uppercase tracking-[0.16em]">P/L source</span><span className="mt-1 block text-foreground">{event.realisedProfitGbp !== undefined ? "Broker reported" : side === "sell" ? "Not reported by broker" : "Not applicable"}</span></div>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -323,14 +328,31 @@ export default function DashboardActivityPage() {
     return dedupeActivityEvents(activity)
   }, [portfolioResponse])
 
+  const earliestActivityDate = useMemo(() => getEarliestActivityDate(rawActivity), [rawActivity])
+
   const dateRange = useMemo(() => {
     if (preset === "custom") {
       const start = startOfDay(parseDateInputValue(customStart))
       const end = endOfDay(parseDateInputValue(customEnd))
       return start.getTime() <= end.getTime() ? { start, end } : { start: end, end: start }
     }
-    return getDateRangeForPreset(preset)
-  }, [customEnd, customStart, preset])
+    return getDateRangeForPreset(preset, { earliestActivity: earliestActivityDate })
+  }, [customEnd, customStart, earliestActivityDate, preset])
+
+  const brokerAccounts = useMemo(
+    () => (portfolioResponse?.meta?.brokerDetails ?? [])
+      .map((detail) => detail.account)
+      .filter((account): account is BrokerAccountSnapshot => Boolean(account)),
+    [portfolioResponse]
+  )
+
+  const realisedPlOptions = useMemo(
+    () => ({
+      brokerAccounts,
+      preferAccountSnapshots: rangeCoversAllTradeActivity(rawActivity, dateRange.start, dateRange.end),
+    }),
+    [brokerAccounts, dateRange.end, dateRange.start, rawActivity]
+  )
 
   const sellPlLookup = useMemo(() => buildSellPlLookup(rawActivity), [rawActivity])
 
@@ -343,8 +365,8 @@ export default function DashboardActivityPage() {
     [activityCategory, rangeActivity, searchQuery, sortBy]
   )
   const summary = useMemo(
-    () => summarizeActivityPeriod(periodActivity, sellPlLookup),
-    [periodActivity, sellPlLookup]
+    () => summarizeActivityPeriod(periodActivity, sellPlLookup, realisedPlOptions),
+    [periodActivity, realisedPlOptions, sellPlLookup]
   )
   const { buys, sells } = useMemo(() => splitActivityBySide(periodActivity), [periodActivity])
   const brokerGroups = useMemo(() => {
@@ -366,11 +388,11 @@ export default function DashboardActivityPage() {
         return {
           ...group,
           ...split,
-          summary: summarizeActivityPeriod(group.activity, sellPlLookup),
+          summary: summarizeActivityPeriod(group.activity, sellPlLookup, realisedPlOptions),
         }
       })
       .sort((left, right) => right.activity.length - left.activity.length || left.label.localeCompare(right.label))
-  }, [periodActivity, sellPlLookup])
+  }, [periodActivity, realisedPlOptions, sellPlLookup])
   const rangeLabel = useMemo(() => formatDateRangeLabel(dateRange.start, dateRange.end), [dateRange.end, dateRange.start])
   const hasBrokerError = Boolean(portfolioResponse?.meta?.lastError || portfolioResponse?.meta?.brokerDetails?.some((broker) => broker.lastError))
   const noActivityReason = rawActivity.length === 0
@@ -527,7 +549,11 @@ export default function DashboardActivityPage() {
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${summary.totalRealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {formatSignedMoney(summary.totalRealisedPlGbp)}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Broker realised P/L when available; otherwise FIFO estimate.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {realisedPlOptions.preferAccountSnapshots
+              ? "All-time broker account totals for the full trading range."
+              : "Broker-reported P/L on closed sells in this range."}
+          </p>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Activity</p>

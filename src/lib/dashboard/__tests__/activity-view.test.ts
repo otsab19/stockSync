@@ -6,8 +6,10 @@ import {
   formatDateRangeLabel,
   getActivitySide,
   getDateRangeForPreset,
+  getEarliestActivityDate,
   getSellPlGbp,
   groupActivityByTickerAndBroker,
+  rangeCoversAllTradeActivity,
   splitActivityBySide,
   summarizeActivityPeriod,
 } from "@/lib/dashboard/activity-view"
@@ -79,6 +81,73 @@ describe("activity view", () => {
     expect(start.getMonth()).toBe(5)
     expect(end.getDate()).toBe(25)
     expect(end.getHours()).toBe(23)
+  })
+
+  it("returns this year from January 1 through today", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 5, 25, 12, 0, 0))
+
+    const { start, end } = getDateRangeForPreset("this-year")
+
+    expect(start.getMonth()).toBe(0)
+    expect(start.getDate()).toBe(1)
+    expect(end.getDate()).toBe(25)
+    expect(end.getHours()).toBe(23)
+  })
+
+  it("returns since-start from earliest trade through today", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 5, 25, 12, 0, 0))
+    const earliest = new Date(2024, 2, 15, 10, 0, 0)
+
+    const { start, end } = getDateRangeForPreset("since-start", { earliestActivity: earliest })
+
+    expect(start.getFullYear()).toBe(2024)
+    expect(start.getMonth()).toBe(2)
+    expect(start.getDate()).toBe(15)
+    expect(end.getDate()).toBe(25)
+  })
+
+  it("detects when a date range covers all trade activity", () => {
+    const activity = [
+      makeEvent({ id: "a", type: "buy", timestamp: "2024-03-01T10:00:00Z" }),
+      makeEvent({ id: "b", type: "sell", timestamp: "2026-05-20T10:00:00Z" }),
+    ]
+
+    expect(
+      rangeCoversAllTradeActivity(
+        activity,
+        new Date(2024, 0, 1),
+        new Date(2026, 11, 31)
+      )
+    ).toBe(true)
+    expect(
+      rangeCoversAllTradeActivity(
+        activity,
+        new Date(2025, 0, 1),
+        new Date(2026, 11, 31)
+      )
+    ).toBe(false)
+  })
+
+  it("uses broker account snapshots for full-range realised p/l", () => {
+    const activity = [
+      makeEvent({ id: "t212:sell-1", type: "sell", grossAmountGbp: 130 }),
+      makeEvent({ id: "etoro:1:close", type: "sell", broker: "etoro", brokerLabel: "eToro", grossAmountGbp: 80, realisedProfitGbp: 648.37, orderType: "Close" }),
+    ]
+    const lookup = buildSellPlLookup(activity)
+
+    const partial = summarizeActivityPeriod(activity, lookup)
+    expect(partial.totalRealisedPlGbp).toBe(648.37)
+
+    const withSnapshots = summarizeActivityPeriod(activity, lookup, {
+      preferAccountSnapshots: true,
+      brokerAccounts: [
+        { broker: "t212", currency: "GBP", availableCash: null, investedAmount: null, totalEquity: null, holdingsValue: null, unrealizedPl: null, realizedPl: 455.44 },
+        { broker: "etoro", currency: "GBP", availableCash: null, investedAmount: null, totalEquity: null, holdingsValue: null, unrealizedPl: null, realizedPl: 648.37 },
+      ],
+    })
+    expect(withSnapshots.totalRealisedPlGbp).toBeCloseTo(1103.81, 2)
   })
 
   it("maps eToro open and close legs to buy and sell", () => {

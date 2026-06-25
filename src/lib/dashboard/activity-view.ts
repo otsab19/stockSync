@@ -3,7 +3,16 @@ import { resolveTotalRealisedPlGbp } from "@/lib/dashboard/realised-pl"
 import type { BrokerAccountSnapshot } from "@/types/broker-account"
 import type { BrokerId, PortfolioActivityEvent } from "@/types/portfolio"
 
-export type ActivityDatePreset = "today" | "yesterday" | "this-week" | "this-month" | "last-7d" | "last-30d" | "custom"
+export type ActivityDatePreset =
+  | "today"
+  | "yesterday"
+  | "this-week"
+  | "this-month"
+  | "this-year"
+  | "since-start"
+  | "last-7d"
+  | "last-30d"
+  | "custom"
 export type PlGroupBy = "day" | "week" | "month" | "year"
 
 export type PlPeriodBucket = {
@@ -51,7 +60,53 @@ export function parseDateInputValue(value: string) {
   return new Date(year, month - 1, day)
 }
 
-export function getDateRangeForPreset(preset: ActivityDatePreset) {
+function isTradeActivityEvent(event: PortfolioActivityEvent) {
+  return event.type === "buy" || event.type === "sell"
+}
+
+export function getEarliestActivityDate(activity: PortfolioActivityEvent[]) {
+  const tradeEvents = activity.filter(isTradeActivityEvent)
+  if (tradeEvents.length === 0) {
+    return null
+  }
+
+  return tradeEvents.reduce((earliest, event) => {
+    const timestamp = new Date(event.timestamp)
+    return timestamp.getTime() < earliest.getTime() ? timestamp : earliest
+  }, new Date(tradeEvents[0]!.timestamp))
+}
+
+export function getLatestActivityDate(activity: PortfolioActivityEvent[]) {
+  const tradeEvents = activity.filter(isTradeActivityEvent)
+  if (tradeEvents.length === 0) {
+    return null
+  }
+
+  return tradeEvents.reduce((latest, event) => {
+    const timestamp = new Date(event.timestamp)
+    return timestamp.getTime() > latest.getTime() ? timestamp : latest
+  }, new Date(tradeEvents[0]!.timestamp))
+}
+
+export function rangeCoversAllTradeActivity(
+  activity: PortfolioActivityEvent[],
+  rangeStart: Date,
+  rangeEnd: Date
+) {
+  const earliest = getEarliestActivityDate(activity)
+  const latest = getLatestActivityDate(activity)
+  if (!earliest || !latest) {
+    return false
+  }
+
+  return startOfDay(rangeStart).getTime() <= startOfDay(earliest).getTime()
+    && endOfDay(rangeEnd).getTime() >= endOfDay(latest).getTime()
+}
+
+export function getDateRangeForPreset(
+  preset: ActivityDatePreset,
+  options?: { earliestActivity?: Date | null }
+) {
   const now = new Date()
   const todayStart = startOfDay(now)
   const todayEnd = endOfDay(now)
@@ -66,6 +121,12 @@ export function getDateRangeForPreset(preset: ActivityDatePreset) {
       return { start: startOfWeek(now), end: todayEnd }
     case "this-month":
       return { start: startOfMonth(now), end: todayEnd }
+    case "this-year":
+      return { start: startOfYear(now), end: todayEnd }
+    case "since-start": {
+      const start = options?.earliestActivity ? startOfDay(options.earliestActivity) : todayStart
+      return { start, end: todayEnd }
+    }
     case "last-7d": {
       const start = new Date(todayStart)
       start.setDate(start.getDate() - 6)
