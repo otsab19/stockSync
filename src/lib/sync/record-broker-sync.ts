@@ -32,6 +32,57 @@ async function assertNoSupabaseError(error: Error | null, context: string) {
   }
 }
 
+function isMissingColumnError(error: Error | null) {
+  const message = error?.message?.toLowerCase() ?? ""
+  return message.includes("column") || message.includes("schema cache")
+}
+
+async function upsertBrokerConnection(
+  writer: SupabaseWriter,
+  payload: Record<string, unknown>,
+  legacyPayload: Record<string, unknown>,
+  context: string
+) {
+  const phase1Result = await writer.from("broker_connections").upsert(payload, { onConflict: "user_id,broker,source_type" })
+
+  if (!phase1Result.error) {
+    return
+  }
+
+  if (!isMissingColumnError(phase1Result.error)) {
+    await assertNoSupabaseError(phase1Result.error, context)
+    return
+  }
+
+  await assertNoSupabaseError(
+    (await writer.from("broker_connections").upsert(legacyPayload, { onConflict: "user_id,broker,source_type" })).error,
+    context
+  )
+}
+
+async function insertSyncRun(
+  writer: SupabaseWriter,
+  payload: Record<string, unknown>,
+  legacyPayload: Record<string, unknown>,
+  context: string
+) {
+  const phase1Result = await writer.from("sync_runs").insert(payload)
+
+  if (!phase1Result.error) {
+    return
+  }
+
+  if (!isMissingColumnError(phase1Result.error)) {
+    await assertNoSupabaseError(phase1Result.error, context)
+    return
+  }
+
+  await assertNoSupabaseError(
+    (await writer.from("sync_runs").insert(legacyPayload)).error,
+    context
+  )
+}
+
 function resolveAccountSnapshot(
   positions: PortfolioPosition[],
   accountSnapshot?: BrokerAccountSnapshot | null
@@ -68,8 +119,8 @@ export async function recordBrokerSyncFailure(
   const now = new Date().toISOString()
   const message = error instanceof Error ? error.message : "Broker sync failed."
 
-  await assertNoSupabaseError(
-    (await writer.from("broker_connections").upsert(
+  await upsertBrokerConnection(
+    writer,
     {
       user_id: userId,
       broker,
@@ -81,25 +132,46 @@ export async function recordBrokerSyncFailure(
       last_error: message,
       updated_at: now,
     },
-    { onConflict: "user_id,broker,source_type" }
-  )).error,
+    {
+      user_id: userId,
+      broker,
+      source_type: "broker_api",
+      sync_mode: options.syncMode ?? "manual",
+      sync_status: "failed",
+      is_enabled: true,
+      last_synced_at: now,
+      last_error: message,
+      updated_at: now,
+    },
     "Failed to record broker sync failure"
   )
 
-  await assertNoSupabaseError(
-    (await writer.from("sync_runs").insert({
-    user_id: userId,
-    broker,
-    trigger: options.trigger ?? "manual",
-    source_type: "broker_api",
-    status: "failed",
-    positions_imported: 0,
-    positions_mapped: 0,
-    activity_imported: 0,
-    started_at: now,
-    finished_at: now,
-    error_message: message,
-  })).error,
+  await insertSyncRun(
+    writer,
+    {
+      user_id: userId,
+      broker,
+      trigger: options.trigger ?? "manual",
+      source_type: "broker_api",
+      status: "failed",
+      positions_imported: 0,
+      positions_mapped: 0,
+      activity_imported: 0,
+      started_at: now,
+      finished_at: now,
+      error_message: message,
+    },
+    {
+      user_id: userId,
+      broker,
+      trigger: options.trigger ?? "manual",
+      source_type: "broker_api",
+      status: "failed",
+      positions_imported: 0,
+      started_at: now,
+      finished_at: now,
+      error_message: message,
+    },
     "Failed to record failed sync run"
   )
 }
@@ -148,32 +220,50 @@ export async function recordBrokerSync(
     last_activity_imported: activityImported,
   }
 
-  if (!options.preserveSyncMode) {
-    connectionPayload.sync_mode = options.syncMode ?? "manual"
-  }
-
-  await assertNoSupabaseError(
-    (await writer.from("broker_connections").upsert(
-    connectionPayload,
-    { onConflict: "user_id,broker,source_type" }
-  )).error,
-    "Failed to record broker sync"
-  )
-
-  await assertNoSupabaseError(
-    (await writer.from("sync_runs").insert({
+  const legacyConnectionPayload: Record<string, unknown> = {
     user_id: userId,
     broker,
-    trigger: options.trigger ?? "manual",
     source_type: "broker_api",
-    status: positionsStored === 0 ? "failed" : "succeeded",
-    positions_imported: positionsStored,
-    positions_mapped: positionsMapped,
-    activity_imported: activityImported,
-    started_at: now,
-    finished_at: now,
-    error_message: emptySyncWarning,
-  })).error,
+    sync_status: positionsStored === 0 ? "failed" : "succeeded",
+    is_enabled: true,
+    last_synced_at: now,
+    last_error: emptySyncWarning,
+    updated_at: now,
+  }
+
+  if (!options.preserveSyncMode) {
+    connectionPayload.sync_mode = options.syncMode ?? "manual"
+    legacyConnectionPayload.sync_mode = options.syncMode ?? "manual"
+  }
+
+  await upsertBrokerConnection(writer, connectionPayload, legacyConnectionPayload, "Failed to record broker sync")
+
+  await insertSyncRun(
+    writer,
+    {
+      user_id: userId,
+      broker,
+      trigger: options.trigger ?? "manual",
+      source_type: "broker_api",
+      status: positionsStored === 0 ? "failed" : "succeeded",
+      positions_imported: positionsStored,
+      positions_mapped: positionsMapped,
+      activity_imported: activityImported,
+      started_at: now,
+      finished_at: now,
+      error_message: emptySyncWarning,
+    },
+    {
+      user_id: userId,
+      broker,
+      trigger: options.trigger ?? "manual",
+      source_type: "broker_api",
+      status: positionsStored === 0 ? "failed" : "succeeded",
+      positions_imported: positionsStored,
+      started_at: now,
+      finished_at: now,
+      error_message: emptySyncWarning,
+    },
     "Failed to record sync run"
   )
 
