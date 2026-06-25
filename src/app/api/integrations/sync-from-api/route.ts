@@ -3,23 +3,10 @@ import { randomUUID } from "node:crypto"
 import { getBrokerProvider } from "@/lib/integrations/factory"
 import { createRequestLogger, getErrorLogDetails } from "@/lib/backend/logger"
 import { getConfiguredBackend } from "@/lib/backend/config"
+import { recordBrokerSync, type SupabaseWriter } from "@/lib/sync/record-broker-sync"
 import { createClient } from "@/utils/supabase/server"
 import type { BrowserApiSyncRequest, BrowserApiSyncResponse } from "@/types/integrations"
 import type { BrokerId, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
-
-type DeleteBuilder = PromiseLike<unknown> & {
-  eq(column: string, value: unknown): DeleteBuilder
-}
-
-type TableWriter = {
-  upsert(values: unknown, options?: unknown): PromiseLike<unknown>
-  insert(values: unknown): PromiseLike<unknown>
-  delete(): DeleteBuilder
-}
-
-type SupabaseWriter = {
-  from(table: string): TableWriter
-}
 
 function normalizeBrokerId(value: unknown): BrokerId | null {
   return typeof value === "string" && value.trim() ? (value.trim() as BrokerId) : null
@@ -124,82 +111,10 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
 
-  const now = new Date().toISOString()
   const writer = supabase as unknown as SupabaseWriter
-
-  // Upsert broker_connection
-  await writer.from("broker_connections").upsert(
-    {
-      user_id: user.id,
-      broker,
-      source_type: "broker_api",
-      sync_mode: "manual",
-      sync_status: "succeeded",
-      is_enabled: true,
-      last_synced_at: now,
-      last_error: null,
-      updated_at: now,
-    },
-    { onConflict: "user_id,broker,source_type" }
-  )
-
-  // Insert sync_run
-  await writer.from("sync_runs").insert({
-    user_id: user.id,
-    broker,
+  await recordBrokerSync(writer, user.id, broker, positions, activity, {
+    syncMode: "manual",
     trigger: "manual",
-    source_type: "broker_api",
-    status: "succeeded",
-    positions_imported: positions.length,
-    started_at: now,
-    finished_at: now,
   })
-
-  // Replace positions
-  await writer.from("positions").delete().eq("user_id", user.id).eq("broker", broker)
-  if (positions.length > 0) {
-    await writer.from("positions").insert(
-      positions.map((p) => ({
-        user_id: user.id,
-        broker: p.broker,
-        ticker: p.ticker,
-        company_name: p.companyName,
-        shares: p.shares,
-        avg_price: p.avgPrice,
-        live_price: p.livePrice,
-        native_currency: p.nativeCurrency,
-        fx_rate_to_gbp: p.fxRateToGbp,
-        total_value_gbp: p.normalizedTotalValueGbp,
-        total_pl: p.totalPL,
-        total_pl_percent: p.totalPLPercent,
-        updated_at: now,
-      }))
-    )
-  }
-
-  // Replace activity when a fresh activity payload was requested, even if it is empty.
-  if (activity) {
-    if (activity.length > 0) {
-      for (let i = 0; i < activity.length; i += 100) {
-        await writer.from("activity_events").upsert(
-          activity.slice(i, i + 100).map((a) => ({
-            user_id: user.id,
-            broker: a.broker,
-            ticker: a.ticker,
-            company_name: a.companyName,
-            event_type: a.type,
-            shares: a.shares,
-            price: a.price,
-            native_currency: a.nativeCurrency,
-            gross_amount_gbp: a.grossAmountGbp,
-            realised_profit_gbp: a.realisedProfitGbp ?? null,
-            order_type: a.orderType ?? null,
-            timestamp: a.timestamp,
-          })),
-          { onConflict: "user_id,broker,ticker,timestamp,event_type" }
-        )
-      }
-    }
-  }
 }
 

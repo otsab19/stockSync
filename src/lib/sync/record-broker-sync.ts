@@ -1,5 +1,7 @@
 import type { BrokerAccountSnapshot, BrokerSyncStats } from "@/types/broker-account"
 import type { BrokerId, PortfolioActivityEvent, PortfolioPosition, PortfolioSyncMode } from "@/types/portfolio"
+import { logger, getErrorLogDetails } from "@/lib/backend/logger"
+import { normalizePortfolioPositions } from "@/lib/portfolio/position-normalizer"
 
 type DeleteBuilder = PromiseLike<{ error: Error | null }> & {
   eq(column: string, value: unknown): DeleteBuilder
@@ -21,6 +23,7 @@ export type RecordBrokerSyncOptions = {
   syncStats?: BrokerSyncStats
   syncMode?: PortfolioSyncMode
   trigger?: "manual" | "scheduled"
+  preserveSyncMode?: boolean
 }
 
 async function assertNoSupabaseError(error: Error | null, context: string) {
@@ -100,34 +103,40 @@ export async function recordBrokerSync(
   options: RecordBrokerSyncOptions = {}
 ) {
   const now = new Date().toISOString()
-  const accountSnapshot = resolveAccountSnapshot(positions, options.accountSnapshot)
-  const positionsMapped = options.syncStats?.positionsMapped ?? positions.length
-  const positionsStored = positions.length
+  const normalizedPositions = normalizePortfolioPositions(positions)
+  const accountSnapshot = resolveAccountSnapshot(normalizedPositions, options.accountSnapshot)
+  const positionsMapped = options.syncStats?.positionsMapped ?? normalizedPositions.length
+  const positionsStored = normalizedPositions.length
   const activityImported = options.syncStats?.activityImported ?? activity?.length ?? 0
+
+  const connectionPayload: Record<string, unknown> = {
+    user_id: userId,
+    broker,
+    source_type: "broker_api",
+    sync_status: "succeeded",
+    is_enabled: true,
+    last_synced_at: now,
+    last_error: null,
+    updated_at: now,
+    account_currency: accountSnapshot?.currency ?? null,
+    available_cash: accountSnapshot?.availableCash ?? null,
+    invested_amount: accountSnapshot?.investedAmount ?? null,
+    total_equity: accountSnapshot?.totalEquity ?? null,
+    holdings_value: accountSnapshot?.holdingsValue ?? null,
+    unrealized_pl: accountSnapshot?.unrealizedPl ?? null,
+    realized_pl: accountSnapshot?.realizedPl ?? null,
+    last_positions_mapped: positionsMapped,
+    last_positions_stored: positionsStored,
+    last_activity_imported: activityImported,
+  }
+
+  if (!options.preserveSyncMode) {
+    connectionPayload.sync_mode = options.syncMode ?? "manual"
+  }
 
   await assertNoSupabaseError(
     (await writer.from("broker_connections").upsert(
-    {
-      user_id: userId,
-      broker,
-      source_type: "broker_api",
-      sync_mode: options.syncMode ?? "manual",
-      sync_status: "succeeded",
-      is_enabled: true,
-      last_synced_at: now,
-      last_error: null,
-      updated_at: now,
-      account_currency: accountSnapshot?.currency ?? null,
-      available_cash: accountSnapshot?.availableCash ?? null,
-      invested_amount: accountSnapshot?.investedAmount ?? null,
-      total_equity: accountSnapshot?.totalEquity ?? null,
-      holdings_value: accountSnapshot?.holdingsValue ?? null,
-      unrealized_pl: accountSnapshot?.unrealizedPl ?? null,
-      realized_pl: accountSnapshot?.realizedPl ?? null,
-      last_positions_mapped: positionsMapped,
-      last_positions_stored: positionsStored,
-      last_activity_imported: activityImported,
-    },
+    connectionPayload,
     { onConflict: "user_id,broker,source_type" }
   )).error,
     "Failed to record broker sync"
@@ -149,7 +158,7 @@ export async function recordBrokerSync(
     "Failed to record sync run"
   )
 
-  const positionRows = positions.map((position) => ({
+  const positionRows = normalizedPositions.map((position) => ({
     user_id: userId,
     broker: position.broker,
     external_position_id: position.externalPositionId,
@@ -172,7 +181,7 @@ export async function recordBrokerSync(
       `Failed to store ${broker} positions`
     )
 
-    const storedExternalIds = positions.map((position) => `"${position.externalPositionId.replaceAll('"', '\\"')}"`)
+    const storedExternalIds = normalizedPositions.map((position) => `"${position.externalPositionId.replaceAll('"', '\\"')}"`)
     await assertNoSupabaseError(
       (await writer.from("positions")
         .delete()
@@ -189,26 +198,33 @@ export async function recordBrokerSync(
   }
 
   if (activity && activity.length > 0) {
-    for (let index = 0; index < activity.length; index += 100) {
-      await assertNoSupabaseError(
-        (await writer.from("activity_events").upsert(
-        activity.slice(index, index + 100).map((event) => ({
-          user_id: userId,
-          broker: event.broker,
-          ticker: event.ticker,
-          company_name: event.companyName,
-          event_type: event.type,
-          shares: event.shares,
-          price: event.price,
-          native_currency: event.nativeCurrency,
-          gross_amount_gbp: event.grossAmountGbp,
-          realised_profit_gbp: event.realisedProfitGbp ?? null,
-          order_type: event.orderType ?? null,
-          timestamp: event.timestamp,
-        })),
-        { onConflict: "user_id,broker,ticker,timestamp,event_type" }
-      )).error,
-        `Failed to store ${broker} activity`
+    try {
+      for (let index = 0; index < activity.length; index += 100) {
+        await assertNoSupabaseError(
+          (await writer.from("activity_events").upsert(
+          activity.slice(index, index + 100).map((event) => ({
+            user_id: userId,
+            broker: event.broker,
+            ticker: event.ticker,
+            company_name: event.companyName,
+            event_type: event.type,
+            shares: event.shares,
+            price: event.price,
+            native_currency: event.nativeCurrency,
+            gross_amount_gbp: event.grossAmountGbp,
+            realised_profit_gbp: event.realisedProfitGbp ?? null,
+            order_type: event.orderType ?? null,
+            timestamp: event.timestamp,
+          })),
+          { onConflict: "user_id,broker,ticker,timestamp,event_type" }
+        )).error,
+          `Failed to store ${broker} activity`
+        )
+      }
+    } catch (error) {
+      logger.warn(
+        { broker, userId, error: getErrorLogDetails(error), activityCount: activity.length },
+        "Broker positions were stored, but activity import failed"
       )
     }
   }

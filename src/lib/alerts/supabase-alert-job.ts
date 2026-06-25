@@ -5,6 +5,7 @@ import { createServiceRoleClient, getSupabaseServiceRoleSetupMessage } from "@/u
 import { getBrokerProvider } from "@/lib/integrations/factory"
 import type { BrokerInstrumentQuote } from "@/lib/integrations/provider"
 import { PROFIT_ALERT_THRESHOLD_GBP } from "@/lib/alerts/thresholds"
+import { recordBrokerSync, type SupabaseWriter } from "@/lib/sync/record-broker-sync"
 import type { PortfolioPosition } from "@/types/portfolio"
 
 function configureWebPush() {
@@ -63,7 +64,7 @@ type TableWriter = {
   delete(): DeleteBuilder
 }
 
-type SupabaseWriter = {
+type AlertJobWriter = {
   from(table: string): TableWriter
 }
 
@@ -73,56 +74,11 @@ async function recordScheduledPositions(
   broker: "t212" | "etoro",
   positions: PortfolioPosition[]
 ) {
-  const now = new Date().toISOString()
   const writer = supabase as unknown as SupabaseWriter
-
-  await writer.from("broker_connections").upsert(
-    {
-      user_id: userId,
-      broker,
-      source_type: "broker_api",
-      sync_mode: "scheduled",
-      sync_status: "succeeded",
-      is_enabled: true,
-      last_synced_at: now,
-      last_error: null,
-      updated_at: now,
-    },
-    { onConflict: "user_id,broker,source_type" }
-  )
-
-  await writer.from("sync_runs").insert({
-    user_id: userId,
-    broker,
+  await recordBrokerSync(writer, userId, broker, positions, undefined, {
     trigger: "scheduled",
-    source_type: "broker_api",
-    status: "succeeded",
-    positions_imported: positions.length,
-    started_at: now,
-    finished_at: now,
+    preserveSyncMode: true,
   })
-
-  await writer.from("positions").delete().eq("user_id", userId).eq("broker", broker)
-
-  if (positions.length > 0) {
-    await writer.from("positions").insert(
-      positions.map((position) => ({
-        user_id: userId,
-        broker: position.broker,
-        ticker: position.ticker,
-        company_name: position.companyName,
-        shares: position.shares,
-        avg_price: position.avgPrice,
-        live_price: position.livePrice,
-        native_currency: position.nativeCurrency,
-        fx_rate_to_gbp: position.fxRateToGbp,
-        total_value_gbp: position.normalizedTotalValueGbp,
-        total_pl: position.totalPL,
-        total_pl_percent: position.totalPLPercent,
-        updated_at: now,
-      }))
-    )
-  }
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -132,7 +88,7 @@ function toNumber(value: number | string | null | undefined) {
 
 async function evaluateStockMoveAlerts(
   supabase: NonNullable<ReturnType<typeof createServiceRoleClient>>,
-  writer: SupabaseWriter,
+  writer: AlertJobWriter,
   userId: string,
   positions: PortfolioPosition[],
   credentials: ProfileCredentials
@@ -232,7 +188,7 @@ export class SupabaseAlertJobRepository implements AlertJobRepository {
     }
 
     const webPushConfig = configureWebPush()
-    const writer = supabase as unknown as SupabaseWriter
+    const writer = supabase as unknown as AlertJobWriter
 
     if (!webPushConfig.ok) {
       return {
