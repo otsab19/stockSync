@@ -5,6 +5,8 @@ import type { PortfolioApiResponse, PortfolioActivityEvent, PortfolioDataMeta, P
 import type { ServerPortfolioRepository } from "@/lib/portfolio/repository"
 import { normalizeImportedHolding } from "@/lib/portfolio/position-normalizer"
 import { createFailurePortfolioResponse, createSuccessPortfolioResponse } from "@/lib/dashboard/portfolio-response"
+import { refreshMissingBrokerAccountSnapshots } from "@/lib/sync/refresh-broker-account-snapshots"
+import type { SupabaseWriter } from "@/lib/sync/record-broker-sync"
 
 const POSITION_SELECT_LEGACY = "broker, ticker, company_name, shares, avg_price, live_price, native_currency, fx_rate_to_gbp, total_value_gbp, total_pl, total_pl_percent, updated_at"
 const POSITION_SELECT_PHASE1 = `${POSITION_SELECT_LEGACY.replace("broker,", "broker, external_position_id,")}`
@@ -59,6 +61,11 @@ type BrokerConnectionRow = {
   last_positions_mapped: number | null
   last_positions_stored: number | null
   last_activity_imported: number | null
+}
+
+type ProfileCredentials = {
+  t212_api_key: string | null
+  t212_api_secret: string | null
 }
 
 function mapBrokerAccountSnapshot(connection: BrokerConnectionRow): BrokerAccountSnapshot | null {
@@ -273,6 +280,23 @@ export class SupabaseServerPortfolioRepository implements ServerPortfolioReposit
         .eq("is_enabled", true) as unknown as { data: BrokerConnectionRow[] | null; error: Error | null }
 
       connectionRows = legacyConnectionsResponse.error ? [] : (legacyConnectionsResponse.data ?? [])
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("t212_api_key, t212_api_secret")
+      .eq("id", user.id)
+      .single() as unknown as { data: ProfileCredentials | null }
+
+    try {
+      connectionRows = await refreshMissingBrokerAccountSnapshots(
+        supabase as unknown as SupabaseWriter,
+        user.id,
+        profile,
+        connectionRows
+      )
+    } catch {
+      // Account snapshot backfill is best-effort; stale realised_pl should not block portfolio load.
     }
 
     const { data: activityRows, error: activityError } = await supabase

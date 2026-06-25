@@ -208,16 +208,19 @@ export async function recordBrokerSync(
     last_synced_at: now,
     last_error: emptySyncWarning,
     updated_at: now,
-    account_currency: accountSnapshot?.currency ?? null,
-    available_cash: accountSnapshot?.availableCash ?? null,
-    invested_amount: accountSnapshot?.investedAmount ?? null,
-    total_equity: accountSnapshot?.totalEquity ?? null,
-    holdings_value: accountSnapshot?.holdingsValue ?? null,
-    unrealized_pl: accountSnapshot?.unrealizedPl ?? null,
-    realized_pl: accountSnapshot?.realizedPl ?? null,
     last_positions_mapped: positionsMapped,
     last_positions_stored: positionsStored,
     last_activity_imported: activityImported,
+  }
+
+  if (accountSnapshot) {
+    connectionPayload.account_currency = accountSnapshot.currency ?? null
+    connectionPayload.available_cash = accountSnapshot.availableCash ?? null
+    connectionPayload.invested_amount = accountSnapshot.investedAmount ?? null
+    connectionPayload.total_equity = accountSnapshot.totalEquity ?? null
+    connectionPayload.holdings_value = accountSnapshot.holdingsValue ?? null
+    connectionPayload.unrealized_pl = accountSnapshot.unrealizedPl ?? null
+    connectionPayload.realized_pl = accountSnapshot.realizedPl ?? null
   }
 
   const legacyConnectionPayload: Record<string, unknown> = {

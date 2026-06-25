@@ -20,6 +20,12 @@ export function resolveBrokerRealisedPlGbp(
     return accountSnapshot.realizedPl
   }
 
+  // T212 only attaches realisedProfitLoss on a subset of historical fills; summing
+  // partial API rows is misleading (often negative) vs the account summary total.
+  if (preferAccountSnapshot && broker === "t212") {
+    return 0
+  }
+
   return activity
     .filter((event) => event.broker === broker && isClosedSellEvent(event) && event.realisedProfitGbp !== undefined)
     .reduce((sum, event) => sum + (event.realisedProfitGbp ?? 0), 0)

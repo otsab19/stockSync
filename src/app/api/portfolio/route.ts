@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getBrokerProvider } from '@/lib/integrations/factory';
+import { fetchTrading212AccountSummaryFromApi } from '@/lib/integrations/trading212-live';
 import { createClient } from '@/utils/supabase/server';
 import { getConfiguredBackend } from '@/lib/backend/config';
 import { recordBrokerSync, recordBrokerSyncFailure, type SupabaseWriter } from '@/lib/sync/record-broker-sync';
@@ -39,9 +40,28 @@ async function refreshSupabaseBrokerData(includeActivity: boolean) {
     if (!provider) continue
 
     try {
-      const syncData = includeActivity && provider.getSyncData
-        ? await provider.getSyncData({ apiKey, apiSecret })
-        : { positions: await provider.getPositions({ apiKey, apiSecret }), activity: undefined }
+      const credentials = { apiKey, apiSecret }
+      let syncData
+
+      if (includeActivity && provider.getSyncData) {
+        syncData = await provider.getSyncData(credentials)
+      } else {
+        const positions = await provider.getPositions(credentials)
+        const accountSnapshot = broker === "t212"
+          ? await fetchTrading212AccountSummaryFromApi(credentials)
+          : null
+
+        syncData = {
+          positions,
+          activity: undefined,
+          accountSnapshot,
+          syncStats: {
+            positionsMapped: positions.length,
+            positionsStored: positions.length,
+            activityImported: 0,
+          },
+        }
+      }
 
       await recordBrokerSync(writer, user.id, broker, syncData.positions, syncData.activity, {
         accountSnapshot: syncData.accountSnapshot ?? null,

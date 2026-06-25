@@ -57,4 +57,20 @@ describe("realised p/l resolution", () => {
 
     expect(resolveTotalRealisedPlGbp(activity)).toBe(0)
   })
+
+  it("does not sum partial t212 fill p/l when all-time snapshot is missing", () => {
+    const activity = [
+      makeEvent({ id: "sell-1", type: "sell", realisedProfitGbp: -50 }),
+      makeEvent({
+        id: "etoro:1:close:2026-06-02T09:00:00Z:110",
+        type: "sell",
+        broker: "etoro",
+        brokerLabel: "eToro",
+        orderType: "Close",
+        realisedProfitGbp: 20,
+      }),
+    ]
+
+    expect(resolveTotalRealisedPlGbp(activity, { preferAccountSnapshots: true })).toBe(20)
+  })
 })
