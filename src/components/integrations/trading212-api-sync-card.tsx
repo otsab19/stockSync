@@ -104,11 +104,15 @@ export function Trading212ApiSyncCard() {
         await saveBrowserBrokerConnection("t212", credentialsToUse)
         // Also save to Supabase if in supabase mode (for cron/push)
         if (isSupabaseBackend) {
-          await fetch("/api/credentials", {
+          const saveResponse = await fetch("/api/credentials", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ broker: "t212", apiKey: credentialsToUse.apiKey, apiSecret: credentialsToUse.apiSecret }),
-          }).catch(() => {}) // non-critical
+          })
+          const saveData = await saveResponse.json().catch(() => null) as { message?: string } | null
+          if (!saveResponse.ok) {
+            throw new Error(saveData?.message ?? "Failed to save Trading 212 credentials to the server.")
+          }
         }
         setHasSavedCredentials(true)
         setSavedCredentialsUpdatedAt(new Date().toISOString())

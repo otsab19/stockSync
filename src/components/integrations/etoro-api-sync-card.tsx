@@ -99,11 +99,15 @@ export function EtoroApiSyncCard() {
       if (rememberKey) {
         await saveBrowserBrokerConnection("etoro", credentialsToUse)
         if (isSupabaseBackend) {
-          await fetch("/api/credentials", {
+          const saveResponse = await fetch("/api/credentials", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ broker: "etoro", apiKey: credentialsToUse.apiKey, apiSecret: credentialsToUse.apiSecret }),
-          }).catch(() => {})
+          })
+          const saveData = await saveResponse.json().catch(() => null) as { message?: string } | null
+          if (!saveResponse.ok) {
+            throw new Error(saveData?.message ?? "Failed to save eToro credentials to the server.")
+          }
         }
         setHasSavedCredentials(true)
         setSavedCredentialsUpdatedAt(new Date().toISOString())

@@ -71,21 +71,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "broker and apiKey required." }, { status: 400 })
   }
 
-  const updateData: Record<string, string | null> = {}
+  const trimmedKey = apiKey.trim()
+  const trimmedSecret = typeof apiSecret === "string" ? apiSecret.trim() : ""
+
+  if (!trimmedSecret) {
+    return NextResponse.json({ message: "apiSecret is required for both brokers." }, { status: 400 })
+  }
+
+  const updateData: Record<string, string> = { id: user.id }
   if (broker === "t212") {
-    updateData.t212_api_key = apiKey
-    updateData.t212_api_secret = apiSecret || null
+    updateData.t212_api_key = trimmedKey
+    updateData.t212_api_secret = trimmedSecret
   } else if (broker === "etoro") {
-    updateData.etoro_api_key = apiKey
-    updateData.etoro_api_secret = apiSecret || null
+    updateData.etoro_api_key = trimmedKey
+    updateData.etoro_api_secret = trimmedSecret
   } else {
     return NextResponse.json({ message: "Unknown broker." }, { status: 400 })
   }
 
-  const { error } = await (supabase.from("profiles") as any).update(updateData).eq("id", user.id)
+  const { error } = await (supabase.from("profiles") as any).upsert(updateData, { onConflict: "id" })
 
   if (error) {
-    return NextResponse.json({ message: "Failed to save credentials." }, { status: 500 })
+    return NextResponse.json({ message: `Failed to save credentials: ${error.message}` }, { status: 500 })
   }
 
   return NextResponse.json({ message: "Credentials saved." })
