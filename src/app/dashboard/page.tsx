@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FilterBar } from "@/components/dashboard/filter-bar"
 import { KpiStrip } from "@/components/dashboard/kpi-strip"
 import { PortfolioCharts } from "@/components/dashboard/portfolio-charts"
+import { WaterfallChart } from "@/components/dashboard/waterfall-chart"
 import { PortfolioTable } from "@/components/dashboard/portfolio-table"
 import { buildSellPlLookup, filterActivityByDateRange, getDateRangeForPreset, summarizeActivityPeriod } from "@/lib/dashboard/activity-view"
 import { buildInsights, defaultFilterState, filterActivity, filterPortfolio, formatMoney, getDisplayProfit } from "@/lib/dashboard/filter-engine"
@@ -324,7 +325,8 @@ function DashboardContent() {
             onFiltersChange={setFilters}
           />
 
-          <PortfolioCharts insights={filteredInsights} onHighlightAsset={setHighlightedTicker} />
+          <PortfolioCharts insights={filteredInsights} portfolio={filteredPortfolio} onHighlightAsset={setHighlightedTicker} />
+          <WaterfallChart portfolio={filteredPortfolio} />
           <PortfolioTable
             portfolio={filteredPortfolio}
             currencyMode={filters.currencyMode}

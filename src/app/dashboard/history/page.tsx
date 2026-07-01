@@ -7,6 +7,7 @@ import { ArrowDownUp, ChevronDown, ChevronRight, Download, RefreshCw, TrendingUp
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
 import { BrokerFreshnessList, FreshnessBadge } from "@/components/dashboard/freshness-badge"
+import { PlHeatmap } from "@/components/dashboard/pl-heatmap"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -638,6 +639,8 @@ export default function DashboardHistoryPage() {
           ))}
         </section>
       ) : null}
+
+      <PlHeatmap activity={rawActivity} />
 
       {/* Filters */}
       <Card className="border-border">
