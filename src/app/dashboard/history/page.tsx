@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Fragment } from "react"
-import { ArrowDownUp, ChevronDown, ChevronRight, RefreshCw, TrendingUp, TrendingDown, BarChart3, List } from "lucide-react"
+import { ArrowDownUp, ChevronDown, ChevronRight, Download, RefreshCw, TrendingUp, TrendingDown, BarChart3, List } from "lucide-react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
 import { BrokerFreshnessList, FreshnessBadge } from "@/components/dashboard/freshness-badge"
@@ -21,6 +21,7 @@ import {
   buildTickerTradeSummaries,
 } from "@/lib/dashboard/history-metrics"
 import { buildTradeCycles, groupTradeCycles, type TradeCycleGroupBy } from "@/lib/dashboard/trade-cycles"
+import { buildPortfolioAnalytics } from "@/lib/dashboard/portfolio-analytics"
 import { createClientPortfolioRepository } from "@/lib/portfolio/client-factory"
 import type { BrokerId, PortfolioActivityEvent, PortfolioApiResponse } from "@/types/portfolio"
 
@@ -160,6 +161,36 @@ function formatShortDate(value: string) {
 
 function formatLongDateTime(value: string) {
   return new Date(value).toLocaleString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+}
+
+function downloadActivityCsv(activity: PortfolioActivityEvent[]) {
+  const rows = [
+    ["Date", "Broker", "Ticker", "Company", "Side", "Shares", "Price", "Currency", "Amount (GBP)", "Realised P/L (GBP)", "Order type"],
+  ]
+  for (const event of activity) {
+    const side = getActivitySide(event)
+    rows.push([
+      formatLongDateTime(event.timestamp),
+      event.brokerLabel,
+      event.ticker,
+      event.companyName,
+      side,
+      String(event.shares),
+      String(event.price),
+      event.nativeCurrency,
+      event.grossAmountGbp.toFixed(2),
+      event.realisedProfitGbp !== undefined ? event.realisedProfitGbp.toFixed(2) : "",
+      event.orderType ?? "",
+    ])
+  }
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, "'")}"`).join(",")).join("\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = `trade-history-${new Date().toISOString().slice(0, 10)}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function formatSignedMoney(value: number) {
@@ -451,11 +482,16 @@ export default function DashboardHistoryPage() {
     ? closedTradeCycles.reduce((worst, cycle) => ((cycle.plGbp ?? 0) < (worst.plGbp ?? 0) ? cycle : worst))
     : null
 
+  const { open: openMetrics, history: historyMetrics } = performanceMetrics
+
+  const portfolioAnalytics = useMemo(
+    () => buildPortfolioAnalytics(rawActivity, openMetrics.valueGbp),
+    [rawActivity, openMetrics.valueGbp]
+  )
+
   const avgTradeSizeGbp = displayActivity.length === 0
     ? 0
     : displayActivity.reduce((sum, e) => sum + e.grossAmountGbp, 0) / displayActivity.length
-
-  const { open: openMetrics, history: historyMetrics } = performanceMetrics
 
   const hasAnyActivity = rawActivity.length > 0
   const hasFilteredResults = displayActivity.length > 0
@@ -474,10 +510,18 @@ export default function DashboardHistoryPage() {
           </>
         }
         actions={
-          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
-            <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
-            {isRefreshing ? "Syncing..." : "Refresh"}
-          </Button>
+          <div className="flex gap-2">
+            {displayActivity.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => downloadActivityCsv(displayActivity)} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+                <Download className="size-4" />
+                Export CSV
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+              <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
+              {isRefreshing ? "Syncing..." : "Refresh"}
+            </Button>
+          </div>
         }
       />
 
@@ -526,6 +570,46 @@ export default function DashboardHistoryPage() {
           </p>
         </div>
       </section>
+
+      {/* XIRR / TWR analytics row */}
+      {(portfolioAnalytics.xirr !== null || portfolioAnalytics.twr !== null) && (
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">XIRR</p>
+            <p className={`mt-2 text-2xl font-semibold tracking-tight ${(portfolioAnalytics.xirrPercent ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {portfolioAnalytics.xirrPercent !== null
+                ? `${portfolioAnalytics.xirrPercent >= 0 ? "+" : ""}${portfolioAnalytics.xirrPercent.toFixed(2)}%`
+                : "—"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Annualised return (all cash flows)</p>
+          </div>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">TWR</p>
+            <p className={`mt-2 text-2xl font-semibold tracking-tight ${(portfolioAnalytics.twrPercent ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {portfolioAnalytics.twrPercent !== null
+                ? `${portfolioAnalytics.twrPercent >= 0 ? "+" : ""}${portfolioAnalytics.twrPercent.toFixed(2)}%`
+                : "—"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Time-weighted return (cumulative)</p>
+          </div>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total invested</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(portfolioAnalytics.totalInvested, "GBP")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Gross buy volume across all history</p>
+          </div>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Holding period</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight">
+              {portfolioAnalytics.holdingPeriodDays !== null
+                ? portfolioAnalytics.holdingPeriodDays >= 365
+                  ? `${(portfolioAnalytics.holdingPeriodDays / 365).toFixed(1)}y`
+                  : `${portfolioAnalytics.holdingPeriodDays}d`
+                : "—"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Since first recorded trade</p>
+          </div>
+        </section>
+      )}
 
       {brokerBreakdown.length > 1 ? (
         <section className="grid gap-4 sm:grid-cols-2">

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { NotificationToggle } from "@/components/notifications/notification-toggle"
 import { TestNotificationButton } from "@/components/notifications/test-notification-button"
 import { StockAlertManager } from "@/components/notifications/stock-alert-manager"
+import { AlertThresholdSettings } from "@/components/notifications/alert-threshold-settings"
 
 export default function SettingsPage() {
   return (
@@ -35,6 +36,7 @@ export default function SettingsPage() {
         </Card>
 
         <StockAlertManager />
+        <AlertThresholdSettings />
       </div>
     </PageShell>
   )

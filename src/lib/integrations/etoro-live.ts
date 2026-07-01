@@ -1,5 +1,6 @@
 import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
+import { getUsdToGbpRate } from "@/lib/fx"
 import { buildOrderPreview } from "@/lib/orders/validation"
 import type { BrokerInstrument, BrokerInstrumentQuote } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
@@ -406,8 +407,8 @@ function getMidPrice(bid: number | null, ask: number | null) {
   return bid ?? ask ?? null
 }
 
-function convertNativeToGbp(amount: number, currency: PortfolioPosition["nativeCurrency"]) {
-  return currency === "GBP" ? amount : amount * USD_TO_GBP_FALLBACK_RATE
+function convertNativeToGbp(amount: number, currency: PortfolioPosition["nativeCurrency"], liveUsdToGbp = USD_TO_GBP_FALLBACK_RATE) {
+  return currency === "GBP" ? amount : amount * liveUsdToGbp
 }
 
 function getConfiguredEtoroAccountCurrency(): PortfolioPosition["nativeCurrency"] | null {
@@ -2026,6 +2027,8 @@ export async function fetchEtoroPortfolioFromApi(credentials?: string | BrokerAp
 }
 
 export async function fetchEtoroSyncDataFromApi(credentials?: string | BrokerApiCredentials) {
+  const liveUsdToGbp = await getUsdToGbpRate()
+  logger.info({ broker: "etoro", liveUsdToGbp }, "Fetched live USD→GBP rate for sync")
   const portfolioData = await fetchEtoroPortfolioDataFromApi(credentials)
 
   let historyActivity: PortfolioActivityEvent[] = []

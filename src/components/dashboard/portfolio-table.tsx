@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useMemo, useState } from "react"
+import { useAlertThresholds } from "@/lib/alerts/use-alert-thresholds"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
@@ -35,6 +36,7 @@ function groupPositions(positions: PortfolioPosition[], groupBy: GroupBy): Map<s
 }
 
 export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoading, highlightedTicker = null }: PortfolioTableProps) {
+  const { resolveForTicker } = useAlertThresholds()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [groupBy, setGroupBy] = useState<GroupBy>("none")
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -146,9 +148,18 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
                               {position.totalPL >= 0 ? "+" : ""}{formatMoney(getDisplayProfit(position, currencyMode), displayCurrency)}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={getAlertBadgeVariant(position.alertStatus)} className="text-[0.6rem]">
-                                {position.alertStatus === "near-alert" ? "⚠️" : position.alertStatus === "triggered" ? "🔴" : "✓"}
-                              </Badge>
+                              {(() => {
+                                const resolved = resolveForTicker(position.ticker, position.totalPL)
+                                return (
+                                  <Badge
+                                    variant={getAlertBadgeVariant(resolved.alertStatus)}
+                                    className="text-[0.6rem]"
+                                    title={`Alert at £${resolved.thresholdGbp} · near-alert £${resolved.nearWindowGbp} before`}
+                                  >
+                                    {resolved.alertStatus === "near-alert" ? "⚠️" : resolved.alertStatus === "triggered" ? "🔴" : "✓"}
+                                  </Badge>
+                                )
+                              })()}
                             </TableCell>
                           </TableRow>
                           {expanded && (

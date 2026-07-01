@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useSearchParams } from "next/navigation"
-import { ArrowLeftRight, Brain, ChartCandlestick, LayoutDashboard, Landmark, Menu, Settings, ShoppingCart } from "lucide-react"
+import { ArrowLeftRight, Brain, ChartCandlestick, LayoutDashboard, Landmark, Menu, Receipt, Settings, ShoppingCart } from "lucide-react"
 import { ThemeToggle } from "@/components/theme/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -15,6 +15,7 @@ const navigationItems = [
 	{ href: "/dashboard/activity", label: "Activity", shortLabel: "Activity", icon: ArrowLeftRight },
 	{ href: "/dashboard/history", label: "History", shortLabel: "History", icon: ChartCandlestick },
 	{ href: "/dashboard/analysis", label: "Analysis", shortLabel: "AI", icon: Brain },
+	{ href: "/dashboard/tax", label: "Tax (CGT)", shortLabel: "Tax", icon: Receipt },
 	{ href: "/integrations", label: "Connections", shortLabel: "Brokers", icon: Landmark },
 	{ href: "/settings", label: "Settings", shortLabel: "Settings", icon: Settings },
 ]

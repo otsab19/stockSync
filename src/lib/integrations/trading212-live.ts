@@ -1,5 +1,6 @@
 import { inferAssetType, normalizeImportedHolding, normalizeTickerSymbol } from "@/lib/portfolio/position-normalizer"
 import { logger, getErrorLogDetails } from "@/lib/backend/logger"
+import { getUsdToGbpRate } from "@/lib/fx"
 import { buildOrderPreview } from "@/lib/orders/validation"
 import type { BrokerInstrument } from "@/lib/integrations/provider"
 import type { BrokerApiCredentials } from "@/types/integrations"
@@ -10,7 +11,7 @@ import type { Json } from "@/types/supabase"
 
 const DEFAULT_TRADING212_API_BASE_URL = "https://live.trading212.com/api/v0"
 const DEFAULT_TRADING212_HISTORY_PATH = "/equity/history/orders?limit=50"
-const USD_TO_GBP_FALLBACK_RATE = 0.79
+const USD_TO_GBP_FALLBACK_RATE = 0.79 // kept as synchronous fallback for mappers; use getUsdToGbpRate() in sync entry-points
 const TRADING212_HISTORY_PAGE_DELAY_MS = 11_000 // 6 req/min limit — keep safely below one request every 10s
 const DEFAULT_TRADING212_HISTORY_MAX_PAGES = 50
 
@@ -119,7 +120,8 @@ function convertTrading212WalletAmountToGbp(
   walletCurrency: PortfolioPosition["nativeCurrency"] | null,
   instrumentCurrency: PortfolioPosition["nativeCurrency"] | null,
   fxRate: number | null,
-  nativeNotional: number | null
+  nativeNotional: number | null,
+  liveUsdToGbp = USD_TO_GBP_FALLBACK_RATE
 ) {
   const resolvedWalletCurrency = walletCurrency ?? getConfiguredTrading212AccountCurrency() ?? "GBP"
 
@@ -128,7 +130,7 @@ function convertTrading212WalletAmountToGbp(
   }
 
   if (resolvedWalletCurrency === "USD") {
-    return amount * USD_TO_GBP_FALLBACK_RATE
+    return amount * liveUsdToGbp
   }
 
   if (
@@ -139,13 +141,13 @@ function convertTrading212WalletAmountToGbp(
     && instrumentCurrency === "USD"
   ) {
     const impliedGbp = Math.abs(amount) / fxRate
-    const fallbackGbp = nativeNotional * USD_TO_GBP_FALLBACK_RATE
+    const fallbackGbp = nativeNotional * liveUsdToGbp
     if (Math.abs(impliedGbp - fallbackGbp) / Math.max(fallbackGbp, 1) < 0.35) {
       return impliedGbp
     }
   }
 
-  return instrumentCurrency === "GBP" ? amount : amount * USD_TO_GBP_FALLBACK_RATE
+  return instrumentCurrency === "GBP" ? amount : amount * liveUsdToGbp
 }
 
 function formatTrading212BaseUrl() {
@@ -338,6 +340,11 @@ function formatTrading212AuthHeader(apiKey: string, apiSecret: string) {
 }
 
 async function fetchTrading212Json<T>(path: string, apiKey: string, apiSecret: string): Promise<T> {
+  const { body } = await fetchTrading212JsonWithHeaders<T>(path, apiKey, apiSecret)
+  return body
+}
+
+async function fetchTrading212JsonWithHeaders<T>(path: string, apiKey: string, apiSecret: string): Promise<{ body: T; headers: Headers }> {
   const normalizedPath = normalizeTrading212Path(path)
   const requestUrl = /^https?:\/\//i.test(normalizedPath)
     ? normalizedPath
@@ -361,7 +368,7 @@ async function fetchTrading212Json<T>(path: string, apiKey: string, apiSecret: s
     throw new Error(`Failed to load Trading 212 data from ${path}.${detail}`)
   }
 
-  return await response.json() as T
+  return { body: await response.json() as T, headers: response.headers }
 }
 
 async function postTrading212Json<T>(path: string, apiKey: string, apiSecret: string, body: unknown): Promise<T> {
@@ -716,7 +723,7 @@ function isUnfilledTrading212OrderRow(row: Trading212ApiRow) {
   return true
 }
 
-function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivityEvent | null {
+function mapTrading212OrderRowToActivity(row: Trading212ApiRow, liveUsdToGbp = USD_TO_GBP_FALLBACK_RATE): PortfolioActivityEvent | null {
   if (isUnfilledTrading212OrderRow(row)) {
     return null
   }
@@ -795,14 +802,15 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
       resolvedWalletCurrency,
       instrumentCurrency,
       fxRate,
-      nativeNotional
+      nativeNotional,
+      liveUsdToGbp
     )
     : (quantity !== null && price !== null
       ? (instrumentCurrency === "GBP"
         ? quantity * price
         : fxRate && fxRate > 0
           ? (quantity * price) / fxRate
-          : (quantity * price) * USD_TO_GBP_FALLBACK_RATE)
+          : (quantity * price) * liveUsdToGbp)
       : null)
 
   const grossAmountNative = quantity !== null && price !== null ? quantity * price : null
@@ -831,7 +839,8 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
       resolvedWalletCurrency,
       instrumentCurrency,
       fxRate,
-      nativeNotional
+      nativeNotional,
+      liveUsdToGbp
     )
     : undefined
   const activityId = fillId
@@ -858,9 +867,9 @@ function mapTrading212OrderRowToActivity(row: Trading212ApiRow): PortfolioActivi
   }
 }
 
-export function mapTrading212HistoryItemsToActivity(items: Trading212ApiRow[]): PortfolioActivityEvent[] {
+export function mapTrading212HistoryItemsToActivity(items: Trading212ApiRow[], liveUsdToGbp = USD_TO_GBP_FALLBACK_RATE): PortfolioActivityEvent[] {
   return items
-    .map(mapTrading212OrderRowToActivity)
+    .map((row) => mapTrading212OrderRowToActivity(row, liveUsdToGbp))
     .filter((event): event is PortfolioActivityEvent => Boolean(event))
 }
 
@@ -879,7 +888,7 @@ export function mapTrading212PortfolioResponse(payload: unknown): PortfolioPosit
   return positions
 }
 
-export async function fetchTrading212PortfolioFromApi(credentials?: string | BrokerApiCredentials): Promise<PortfolioPosition[]> {
+export async function fetchTrading212PortfolioFromApi(credentials?: string | BrokerApiCredentials, _liveUsdToGbp?: number): Promise<PortfolioPosition[]> {
   const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
 
   if (!apiKey || !apiSecret) {
@@ -912,7 +921,7 @@ export function mapTrading212AccountSummary(payload: unknown): import("@/types/b
   }
 }
 
-export async function fetchTrading212AccountSummaryFromApi(credentials?: string | BrokerApiCredentials) {
+export async function fetchTrading212AccountSummaryFromApi(credentials?: string | BrokerApiCredentials, _liveUsdToGbp?: number) {
   const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
 
   if (!apiKey || !apiSecret) {
@@ -924,16 +933,18 @@ export async function fetchTrading212AccountSummaryFromApi(credentials?: string 
 }
 
 export async function fetchTrading212SyncDataFromApi(credentials?: string | BrokerApiCredentials) {
-  const positions = await fetchTrading212PortfolioFromApi(credentials)
+  const liveUsdToGbp = await getUsdToGbpRate()
+  logger.info({ broker: "t212", liveUsdToGbp }, "Fetched live USD→GBP rate for sync")
+  const positions = await fetchTrading212PortfolioFromApi(credentials, liveUsdToGbp)
   const [tradeActivity, cashActivity] = await Promise.all([
-    fetchTrading212ActivityFromApi(credentials),
+    fetchTrading212ActivityFromApi(credentials, liveUsdToGbp),
     fetchTrading212CashActivityFromApi(credentials).catch((error) => {
       logger.warn({ broker: "t212", error: getErrorLogDetails(error) }, "Trading 212 cash activity sync skipped")
       return [] as PortfolioActivityEvent[]
     }),
   ])
   const activity = [...tradeActivity, ...cashActivity]
-  const accountSnapshot = await fetchTrading212AccountSummaryFromApi(credentials)
+  const accountSnapshot = await fetchTrading212AccountSummaryFromApi(credentials, liveUsdToGbp)
 
   return {
     positions,
@@ -975,7 +986,7 @@ export async function searchTrading212InstrumentsFromApi(
     .slice(0, 12)
 }
 
-export async function fetchTrading212ActivityFromApi(credentials?: string | BrokerApiCredentials): Promise<PortfolioActivityEvent[]> {
+export async function fetchTrading212ActivityFromApi(credentials?: string | BrokerApiCredentials, liveUsdToGbp = USD_TO_GBP_FALLBACK_RATE): Promise<PortfolioActivityEvent[]> {
   const { apiKey, apiSecret } = normalizeTrading212Credentials(credentials)
 
   if (!apiKey || !apiSecret) {
@@ -992,18 +1003,28 @@ export async function fetchTrading212ActivityFromApi(credentials?: string | Brok
 
   try {
     while (nextPath && pagesLoaded < pageLimit) {
-      const historyPayload: Trading212HistoryResponse = await fetchTrading212Json(nextPath, apiKey, apiSecret)
+      const historyResult = await fetchTrading212JsonWithHeaders<Trading212HistoryResponse>(nextPath, apiKey, apiSecret)
+      const historyPayload: Trading212HistoryResponse = historyResult.body
+      const responseHeaders: Headers = historyResult.headers
       pagesLoaded += 1
       const pageItems = (historyPayload.items ?? []).filter(isRecord)
       items.push(...pageItems)
       nextPath = typeof historyPayload.nextPagePath === "string" && historyPayload.nextPagePath.trim()
         ? historyPayload.nextPagePath
         : null
-      logger.debug({ broker: "t212", pageItems: pageItems.length, nextPath, totalItems: items.length, pagesLoaded, pageLimit }, "Loaded Trading 212 history page")
 
-      // Rate limit: 6 req / 1 min — wait between pages to avoid 429
+      const remaining = Number(responseHeaders.get("x-ratelimit-remaining") ?? NaN)
+      const resetAt = Number(responseHeaders.get("x-ratelimit-reset") ?? NaN)
+      logger.debug({ broker: "t212", pageItems: pageItems.length, nextPath, totalItems: items.length, pagesLoaded, pageLimit, rateLimitRemaining: remaining }, "Loaded Trading 212 history page")
+
       if (nextPath && pagesLoaded < pageLimit) {
-        await new Promise((resolve) => setTimeout(resolve, TRADING212_HISTORY_PAGE_DELAY_MS))
+        if (Number.isFinite(remaining) && remaining <= 1 && Number.isFinite(resetAt)) {
+          const waitMs = Math.max(0, resetAt * 1000 - Date.now()) + 500
+          logger.info({ broker: "t212", waitMs, resetAt }, "T212 rate-limit exhausted, waiting for reset")
+          await new Promise((resolve) => setTimeout(resolve, waitMs))
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, TRADING212_HISTORY_PAGE_DELAY_MS))
+        }
       }
     }
 
@@ -1019,7 +1040,7 @@ export async function fetchTrading212ActivityFromApi(credentials?: string | Brok
     }
   }
 
-  const activity = mapTrading212HistoryItemsToActivity(items)
+  const activity = mapTrading212HistoryItemsToActivity(items, liveUsdToGbp)
 
   logger.info({ broker: "t212", historyRows: items.length, activityEvents: activity.length }, "Mapped Trading 212 history into activity events")
 

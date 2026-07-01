@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ArrowRight, ChartCandlestick, Landmark, Settings2 } from "lucide-react"
 import { PageHeader, PageShell } from "@/components/app/page-shell"
+import { SetupWizard } from "@/components/app/setup-wizard"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -40,6 +41,8 @@ export default function Home() {
           </>
         )}
       />
+
+      <SetupWizard />
 
       <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card className="border-white/10 bg-[linear-gradient(145deg,rgba(16,185,129,0.08),rgba(59,130,246,0.06),transparent_72%)]">
