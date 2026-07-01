@@ -50,7 +50,7 @@ export function PositionDetailPanel({ position }: PositionDetailPanelProps) {
   }
 
   return (
-    <div className="grid gap-4 border-t border-white/8 bg-white/[0.02] px-4 py-4 lg:grid-cols-[1.2fr_1fr]">
+    <div className="grid gap-4 border-t border-border bg-muted/40 px-4 py-4 lg:grid-cols-[1.2fr_1fr]">
       <div className="space-y-3 text-xs text-muted-foreground">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -66,21 +66,21 @@ export function PositionDetailPanel({ position }: PositionDetailPanelProps) {
         </div>
 
         {position.broker === "etoro" && positionId && position.brokerInstrumentId ? (
-          <div className="space-y-2 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+          <div className="space-y-2 rounded-xl border border-border bg-muted/40 p-3">
             <p className="font-medium text-foreground">Close position</p>
             <p>Type <span className="font-mono text-foreground">{requiredConfirmation}</span> to confirm a full market close on eToro.</p>
             <input
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}
               placeholder={requiredConfirmation}
-              className="w-full rounded-xl border border-white/10 bg-background px-3 py-2 text-sm text-foreground outline-none"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none"
             />
             <Button size="sm" variant="destructive" disabled={isClosing} onClick={() => void closePosition()}>
               {isClosing ? "Closing..." : "Close full position"}
             </Button>
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-white/10 px-3 py-3">
+          <div className="rounded-xl border border-dashed border-border px-3 py-3">
             <p className="font-medium text-foreground">Sell from holdings</p>
             <p className="mt-1">Trading 212 closes via a sell order on the trade ticket.</p>
             <Link

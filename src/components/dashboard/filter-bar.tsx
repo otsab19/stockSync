@@ -21,7 +21,7 @@ const plFilters: FilterState["plStatus"][] = ["all", "profitable", "unprofitable
 const sortByOptions: FilterState["sortBy"][] = ["value", "pl_absolute", "pl_percentage", "ticker"]
 const currencyModes: CurrencyMode[] = ["native", "normalized_gbp"]
 const assetTypes: Array<"all" | AssetType> = ["all", "stock", "etf", "crypto"]
-const fieldClasses = "w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none transition focus:border-primary/30"
+const fieldClasses = "w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/30"
 
 const plFilterLabels: Record<FilterState["plStatus"], string> = {
   all: "All P/L",
@@ -79,7 +79,7 @@ export function FilterBar({ filters, availableBrokers, resultCount, totalCount, 
   }
 
   return (
-    <Card className="border-white/10">
+    <Card className="border-border">
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <CardTitle>Filter holdings</CardTitle>
@@ -94,10 +94,10 @@ export function FilterBar({ filters, availableBrokers, resultCount, totalCount, 
             </Button>
           ) : null}
           <Dialog open={isCommandOpen} onOpenChange={setIsCommandOpen}>
-            <DialogTrigger render={<Button variant="outline" className="gap-2 rounded-xl border-white/10 bg-white/[0.03]" />}>
+            <DialogTrigger render={<Button variant="outline" className="gap-2 rounded-xl border-border bg-muted/40" />}>
               <Search className="size-4" />
               Search positions
-              <span className="ml-2 rounded-md border border-white/10 px-2 py-0.5 text-[0.7rem] text-muted-foreground">⌘K</span>
+              <span className="ml-2 rounded-md border border-border px-2 py-0.5 text-[0.7rem] text-muted-foreground">⌘K</span>
             </DialogTrigger>
             <DialogContent className="sm:max-w-xl">
               <DialogHeader>
@@ -186,7 +186,7 @@ export function FilterBar({ filters, availableBrokers, resultCount, totalCount, 
               </select>
               <Button
                 variant="outline"
-                className="rounded-2xl border-white/10 bg-white/[0.03]"
+                className="rounded-xl border-border bg-muted/40"
                 onClick={() =>
                   onFiltersChange({
                     ...filters,
@@ -201,7 +201,7 @@ export function FilterBar({ filters, availableBrokers, resultCount, totalCount, 
 
           <label className="space-y-2 text-sm">
             <span className="font-medium">Currency mode</span>
-            <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+            <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/40 p-1">
               {currencyModes.map((mode) => (
                 <button
                   key={mode}

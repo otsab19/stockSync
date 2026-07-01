@@ -72,13 +72,13 @@ export function PendingOrdersPanel() {
   }
 
   return (
-    <Card className="border-white/10 bg-white/[0.02]">
+    <Card className="border-border bg-muted/40">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
         <div>
           <CardTitle className="text-base">Pending orders</CardTitle>
           <CardDescription>Live broker queue across connected accounts.</CardDescription>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void loadOrders()} disabled={isLoading} className="rounded-xl border-white/10 bg-white/[0.03]">
+        <Button variant="outline" size="sm" onClick={() => void loadOrders()} disabled={isLoading} className="rounded-xl border-border bg-muted/40">
           <RefreshCw className={isLoading ? "size-4 animate-spin" : "size-4"} />
         </Button>
       </CardHeader>
@@ -123,7 +123,7 @@ export function PendingOrdersPanel() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="rounded-xl border-white/10"
+                      className="rounded-xl border-border"
                       disabled={cancellingId === order.brokerOrderId}
                       onClick={() => void cancelOrder(order)}
                     >

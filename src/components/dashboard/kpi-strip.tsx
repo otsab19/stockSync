@@ -18,13 +18,13 @@ export function KpiStrip({ insights, currencyMode, activeBrokerFilterLabel, tota
 
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <Card size="sm" className="border-white/10 bg-white/[0.03]">
+      <Card size="sm">
         <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
           <div className="space-y-1">
             <CardDescription>Total portfolio value</CardDescription>
             <CardTitle className="text-2xl sm:text-[1.8rem]">{totalValueLabel}</CardTitle>
           </div>
-          <span className="flex size-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03]">
+          <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted">
             <PoundSterling className="size-5 text-muted-foreground" />
           </span>
         </CardHeader>
@@ -35,15 +35,15 @@ export function KpiStrip({ insights, currencyMode, activeBrokerFilterLabel, tota
         </CardContent>
       </Card>
 
-      <Card size="sm" className="border-white/10 bg-white/[0.03]">
+      <Card size="sm">
         <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
           <div className="space-y-1">
             <CardDescription>Total net return</CardDescription>
-            <CardTitle className={`text-2xl sm:text-[1.8rem] ${insights.totalNetReturnGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            <CardTitle className={`text-2xl sm:text-[1.8rem] ${insights.totalNetReturnGbp >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
               {totalReturnLabel}
             </CardTitle>
           </div>
-          <span className="flex size-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03]">
+          <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted">
             <TrendingUp className="size-5 text-muted-foreground" />
           </span>
         </CardHeader>
@@ -56,13 +56,13 @@ export function KpiStrip({ insights, currencyMode, activeBrokerFilterLabel, tota
       </Card>
 
       <button type="button" className="text-left" onClick={onFocusAlerts}>
-        <Card className="h-full border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.05]">
+        <Card className="h-full transition-colors hover:bg-muted/30">
           <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
             <div className="space-y-1">
               <CardDescription>Active alert states</CardDescription>
               <CardTitle className="text-2xl sm:text-[1.8rem]">{insights.activeAlertStates}</CardTitle>
             </div>
-            <span className="flex size-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03]">
+            <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted">
               <AlertCircle className="size-5 text-muted-foreground" />
             </span>
           </CardHeader>
@@ -74,13 +74,13 @@ export function KpiStrip({ insights, currencyMode, activeBrokerFilterLabel, tota
         </Card>
       </button>
 
-      <Card size="sm" className="border-white/10 bg-white/[0.03]">
+      <Card size="sm">
         <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
           <div className="space-y-1">
             <CardDescription>Broker distribution</CardDescription>
             <CardTitle className="text-lg sm:text-xl">{allocationSummary || "No active positions"}</CardTitle>
           </div>
-          <span className="flex size-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03]">
+          <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted">
             <ArrowRightLeft className="size-5 text-muted-foreground" />
           </span>
         </CardHeader>

@@ -148,12 +148,12 @@ export function SetupWizard() {
             return (
               <li
                 key={step.id}
-                className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition-colors ${
+                className={`flex items-start gap-3 rounded-xl border px-4 py-3 transition-colors ${
                   isDone
                     ? "border-emerald-500/20 bg-emerald-500/5 opacity-70"
                     : isActive
                       ? "border-primary/30 bg-primary/5"
-                      : "border-white/8 bg-white/[0.02] opacity-50"
+                      : "border-border bg-muted/40 opacity-50"
                 }`}
               >
                 <span className="mt-0.5 shrink-0">
@@ -173,7 +173,7 @@ export function SetupWizard() {
                     </div>
                     {!isDone && isActive && (
                       <Link href={step.href}>
-                        <Button size="sm" variant="outline" className="shrink-0 gap-1.5 rounded-xl border-white/10 bg-white/[0.03]">
+                        <Button size="sm" variant="outline" className="shrink-0 gap-1.5 rounded-xl border-border bg-muted/40">
                           {step.cta}
                           <ChevronRight className="size-3.5" />
                         </Button>

@@ -56,7 +56,7 @@ export function TickerMiniChart({ broker, instrumentId, ticker }: TickerMiniChar
 
   if (broker !== "etoro") {
     return (
-      <div className="rounded-xl border border-dashed border-white/10 px-3 py-4 text-xs text-muted-foreground">
+      <div className="rounded-xl border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
         Price history charts are available for eToro instruments. Use Trade to sell on Trading 212.
       </div>
     )
@@ -71,7 +71,7 @@ export function TickerMiniChart({ broker, instrumentId, ticker }: TickerMiniChar
   }
 
   return (
-    <div className="h-28 rounded-xl border border-white/8 bg-white/[0.02] p-2">
+    <div className="h-28 rounded-xl border border-border bg-muted/40 p-2">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={chartData}>
           <YAxis hide domain={["dataMin", "dataMax"]} />

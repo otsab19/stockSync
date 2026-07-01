@@ -14,7 +14,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-white/10">
+        <Card className="border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Push notifications</CardTitle>
           </CardHeader>
@@ -24,7 +24,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-white/10">
+        <Card className="border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Navigation</CardTitle>
           </CardHeader>

@@ -31,7 +31,7 @@ function BrokerAccountCard({
   const displayCurrency = account.currency
 
   return (
-    <Card className="border-white/10 bg-white/[0.02]">
+    <Card className="border-border bg-muted/40">
       <CardHeader className="pb-2">
         <CardDescription>{brokerLabel} account</CardDescription>
         <CardTitle className="text-lg">Broker-reported totals</CardTitle>
@@ -53,7 +53,7 @@ function BrokerAccountCard({
           <p className="text-xs text-muted-foreground">Total account value</p>
           <p className="font-medium tabular-nums">{formatNullableMoney(account.totalEquity, displayCurrency)}</p>
         </div>
-        <div className="sm:col-span-2 rounded-xl border border-dashed border-white/10 px-3 py-2 text-xs text-muted-foreground">
+        <div className="sm:col-span-2 rounded-xl border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
           Synced in app: {syncedHoldingsCount} lot{syncedHoldingsCount === 1 ? "" : "s"} ·{" "}
           {formatMoney(syncedHoldingsValue, displayCurrency)} open value from holdings table.
           {account.totalEquity !== null && account.holdingsValue !== null && Math.abs(account.totalEquity - account.holdingsValue) > 1 ? (

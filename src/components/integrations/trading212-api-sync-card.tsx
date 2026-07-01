@@ -182,7 +182,7 @@ export function Trading212ApiSyncCard() {
   }
 
   return (
-    <Card className="border-white/10">
+    <Card className="border-border">
       <CardHeader>
         <CardTitle>Trading 212 live sync</CardTitle>
         <CardDescription>
@@ -206,7 +206,7 @@ export function Trading212ApiSyncCard() {
             placeholder={hasSavedCredentials ? "Leave blank to use saved key" : "Paste your Trading 212 API key"}
             autoComplete="off"
             spellCheck={false}
-            className="block w-full rounded-2xl border border-white/10 bg-background/45 px-3 py-3"
+            className="block w-full rounded-xl border border-border bg-background/45 px-3 py-3"
           />
         </label>
 
@@ -222,7 +222,7 @@ export function Trading212ApiSyncCard() {
             placeholder={hasSavedCredentials ? "Leave blank to use saved secret" : "Paste your Trading 212 API secret"}
             autoComplete="off"
             spellCheck={false}
-            className="block w-full rounded-2xl border border-white/10 bg-background/45 px-3 py-3"
+            className="block w-full rounded-xl border border-border bg-background/45 px-3 py-3"
           />
         </label>
 
@@ -232,7 +232,7 @@ export function Trading212ApiSyncCard() {
         </label>
 
         {hasSavedCredentials ? (
-          <p className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+          <p className="rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs">
             ✓ Credentials saved{savedCredentialsUpdatedAt ? ` • Updated ${formatDateTime(savedCredentialsUpdatedAt)}` : ""}
           </p>
         ) : null}
@@ -246,11 +246,11 @@ export function Trading212ApiSyncCard() {
             <RefreshCw className={isSyncing ? "size-4 animate-spin" : "size-4"} />
             {isSyncing ? "Syncing..." : hasSavedCredentials && !apiKey.trim() && !apiSecret.trim() ? "Sync using saved credentials" : "Sync Trading 212 now"}
           </Button>
-          <Button variant="outline" onClick={() => void handleRemoveSavedKey()} disabled={isSyncing || !hasSavedCredentials} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+          <Button variant="outline" onClick={() => void handleRemoveSavedKey()} disabled={isSyncing || !hasSavedCredentials} className="gap-2 rounded-xl border-border bg-muted/40">
             <KeyRound className="size-4" />
             Remove credentials
           </Button>
-          <Button variant="outline" onClick={() => void handleRemoveHoldings()} disabled={isSyncing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+          <Button variant="outline" onClick={() => void handleRemoveHoldings()} disabled={isSyncing} className="gap-2 rounded-xl border-border bg-muted/40">
             <Trash2 className="size-4" />
             Remove holdings
           </Button>

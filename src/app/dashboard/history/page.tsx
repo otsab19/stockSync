@@ -248,7 +248,7 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
   function renderGroupHeader(group: ReturnType<typeof groupTradeCycles>[number]) {
     const showPl = group.key === "sells" || groupBy === "ticker" || groupBy === "broker"
     return (
-      <TableRow className="cursor-pointer bg-white/[0.03] hover:bg-white/[0.05]" onClick={() => toggleGroup(group.key)}>
+      <TableRow className="cursor-pointer bg-muted/40 hover:bg-muted/40" onClick={() => toggleGroup(group.key)}>
         <TableCell colSpan={8} className="py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -269,7 +269,7 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
   }
 
   return (
-    <Card className="border-white/10">
+    <Card className="border-border">
       <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
         <div>
           <CardTitle className="text-base">Transactions ({activity.length} legs · {tradeCycles.length} round trips)</CardTitle>
@@ -281,7 +281,7 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
             setGroupBy(event.target.value as TradeCycleGroupBy)
             setCollapsedGroups(new Set())
           }}
-          className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
+          className="rounded-lg border border-border bg-muted/40 px-2 py-1 text-xs outline-none"
         >
           <option value="ticker">Group by stock</option>
           <option value="broker">Group by broker</option>
@@ -312,7 +312,7 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
                     const rows = []
                     cycle.buys.forEach((buy, buyIndex) => {
                       rows.push(
-                        <TableRow key={`${cycle.id}:buy:${buyIndex}`} className="bg-white/[0.01]">
+                        <TableRow key={`${cycle.id}:buy:${buyIndex}`} className="bg-muted/40">
                           <TableCell><span className="text-xs font-medium text-emerald-400">Buy</span></TableCell>
                           <TableCell><span className="text-xs">{formatLongDateTime(buy.timestamp)}</span></TableCell>
                           <TableCell><span className="text-xs text-muted-foreground">{cycle.brokerLabel}</span></TableCell>
@@ -331,7 +331,7 @@ function HistoryTradeCyclesTable({ activity }: { activity: PortfolioActivityEven
                     })
                     if (cycle.sell) {
                       rows.push(
-                        <TableRow key={`${cycle.id}:sell`} className="border-b border-white/[0.06] bg-white/[0.01]">
+                        <TableRow key={`${cycle.id}:sell`} className="border-b border-border bg-muted/40">
                           <TableCell><span className="text-xs font-medium text-red-400">Sell</span></TableCell>
                           <TableCell><span className="text-xs">{formatLongDateTime(cycle.sell.timestamp)}</span></TableCell>
                           <TableCell><span className="text-xs text-muted-foreground">{cycle.brokerLabel}</span></TableCell>
@@ -512,12 +512,12 @@ export default function DashboardHistoryPage() {
         actions={
           <div className="flex gap-2">
             {displayActivity.length > 0 && (
-              <Button variant="outline" size="sm" onClick={() => downloadActivityCsv(displayActivity)} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+              <Button variant="outline" size="sm" onClick={() => downloadActivityCsv(displayActivity)} className="gap-2 rounded-xl border-border bg-muted/40">
                 <Download className="size-4" />
                 Export CSV
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+            <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-border bg-muted/40">
               <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
               {isRefreshing ? "Syncing..." : "Refresh"}
             </Button>
@@ -527,15 +527,15 @@ export default function DashboardHistoryPage() {
 
       {/* KPI Strip — open positions (live) + closed trade performance (filtered history) */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Open value</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Open value</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(openMetrics.valueGbp, "GBP")}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {openMetrics.positionCount} open position{openMetrics.positionCount === 1 ? "" : "s"} across {brokerBreakdown.length} broker{brokerBreakdown.length === 1 ? "" : "s"}
           </p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Unrealised P/L</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Unrealised P/L</p>
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${openMetrics.unrealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {formatSignedMoney(openMetrics.unrealisedPlGbp)}
           </p>
@@ -543,8 +543,8 @@ export default function DashboardHistoryPage() {
             {openMetrics.unrealisedReturnPercent >= 0 ? "+" : ""}{openMetrics.unrealisedReturnPercent.toFixed(1)}% on {formatMoney(openMetrics.costBasisGbp, "GBP")} cost basis
           </p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Realised P/L</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Realised P/L</p>
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${historyMetrics.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {formatSignedMoney(historyMetrics.realisedPlGbp)}
           </p>
@@ -552,18 +552,18 @@ export default function DashboardHistoryPage() {
             Closed trades only · {historyMetrics.closedTradeCount} round trip{historyMetrics.closedTradeCount === 1 ? "" : "s"} in range
           </p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Capital in</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Capital in</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(historyMetrics.totalBoughtGbp, "GBP")}</p>
           <p className="mt-1 text-xs text-muted-foreground">Gross buy volume in selected range</p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Capital out</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Capital out</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(historyMetrics.totalSoldGbp, "GBP")}</p>
           <p className="mt-1 text-xs text-muted-foreground">Gross sell volume in selected range</p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Win rate</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Win rate</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{historyMetrics.winRate.toFixed(1)}%</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {historyMetrics.closedTradeCount} closed round trip{historyMetrics.closedTradeCount === 1 ? "" : "s"}
@@ -574,8 +574,8 @@ export default function DashboardHistoryPage() {
       {/* XIRR / TWR analytics row */}
       {(portfolioAnalytics.xirr !== null || portfolioAnalytics.twr !== null) && (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">XIRR</p>
+          <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">XIRR</p>
             <p className={`mt-2 text-2xl font-semibold tracking-tight ${(portfolioAnalytics.xirrPercent ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
               {portfolioAnalytics.xirrPercent !== null
                 ? `${portfolioAnalytics.xirrPercent >= 0 ? "+" : ""}${portfolioAnalytics.xirrPercent.toFixed(2)}%`
@@ -583,8 +583,8 @@ export default function DashboardHistoryPage() {
             </p>
             <p className="mt-1 text-xs text-muted-foreground">Annualised return (all cash flows)</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">TWR</p>
+          <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">TWR</p>
             <p className={`mt-2 text-2xl font-semibold tracking-tight ${(portfolioAnalytics.twrPercent ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
               {portfolioAnalytics.twrPercent !== null
                 ? `${portfolioAnalytics.twrPercent >= 0 ? "+" : ""}${portfolioAnalytics.twrPercent.toFixed(2)}%`
@@ -592,13 +592,13 @@ export default function DashboardHistoryPage() {
             </p>
             <p className="mt-1 text-xs text-muted-foreground">Time-weighted return (cumulative)</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Total invested</p>
+          <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Total invested</p>
             <p className="mt-2 text-2xl font-semibold tracking-tight">{formatMoney(portfolioAnalytics.totalInvested, "GBP")}</p>
             <p className="mt-1 text-xs text-muted-foreground">Gross buy volume across all history</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Holding period</p>
+          <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Holding period</p>
             <p className="mt-2 text-2xl font-semibold tracking-tight">
               {portfolioAnalytics.holdingPeriodDays !== null
                 ? portfolioAnalytics.holdingPeriodDays >= 365
@@ -614,21 +614,21 @@ export default function DashboardHistoryPage() {
       {brokerBreakdown.length > 1 ? (
         <section className="grid gap-4 sm:grid-cols-2">
           {brokerBreakdown.map((broker) => (
-            <div key={broker.broker} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <div key={broker.broker} className="rounded-lg border border-border bg-card p-4 card-shadow">
               <p className="text-sm font-semibold">{broker.brokerLabel}</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
                 <div>
-                  <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Open value</p>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">Open value</p>
                   <p className="mt-1 text-sm font-semibold tabular-nums">{formatMoney(broker.openValueGbp, "GBP")}</p>
                 </div>
                 <div>
-                  <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Unrealised</p>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">Unrealised</p>
                   <p className={`mt-1 text-sm font-semibold tabular-nums ${broker.unrealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {formatSignedMoney(broker.unrealisedPlGbp)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Realised</p>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">Realised</p>
                   <p className={`mt-1 text-sm font-semibold tabular-nums ${broker.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {formatSignedMoney(broker.realisedPlGbp)}
                   </p>
@@ -640,7 +640,7 @@ export default function DashboardHistoryPage() {
       ) : null}
 
       {/* Filters */}
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader className="gap-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -662,7 +662,7 @@ export default function DashboardHistoryPage() {
                 value={filters.searchQuery}
                 onChange={(e) => setFilters((c) => ({ ...c, searchQuery: e.target.value }))}
                 placeholder="Search ticker, company, broker, order type"
-                className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none"
+                className="w-full rounded-xl border border-border bg-background/45 px-4 py-3 text-sm outline-none"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -670,7 +670,7 @@ export default function DashboardHistoryPage() {
               <select
                 value={filters.timeRange}
                 onChange={(e) => setFilters((c) => ({ ...c, timeRange: e.target.value as ActivityTimeRange }))}
-                className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none"
+                className="w-full rounded-xl border border-border bg-background/45 px-4 py-3 text-sm outline-none"
               >
                 {Object.entries(timeRangeLabels).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -682,7 +682,7 @@ export default function DashboardHistoryPage() {
               <select
                 value={filters.sortBy}
                 onChange={(e) => setFilters((c) => ({ ...c, sortBy: e.target.value as ActivitySortBy }))}
-                className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none"
+                className="w-full rounded-xl border border-border bg-background/45 px-4 py-3 text-sm outline-none"
               >
                 <option value="timestamp">Date</option>
                 <option value="grossAmountGbp">Gross amount</option>
@@ -695,7 +695,7 @@ export default function DashboardHistoryPage() {
               <Button
                 variant="outline"
                 onClick={() => setFilters((c) => ({ ...c, sortOrder: c.sortOrder === "asc" ? "desc" : "asc" }))}
-                className="w-full justify-between rounded-2xl border-white/10 bg-white/[0.03] px-4 py-3"
+                className="w-full justify-between rounded-xl border-border bg-muted/40 px-4 py-3"
               >
                 <span>{filters.sortOrder === "asc" ? "Ascending" : "Descending"}</span>
                 <ArrowDownUp className="size-4" />
@@ -757,7 +757,7 @@ export default function DashboardHistoryPage() {
             ))}
           </div>
           {/* View mode toggle */}
-          <div className="flex gap-2 border-t border-white/8 pt-4">
+          <div className="flex gap-2 border-t border-border pt-4">
             <Button size="sm" variant={viewMode === "trades" ? "default" : "outline"} className="gap-2"
               onClick={() => setViewMode("trades")}>
               <List className="size-3.5" /> All trades
@@ -771,7 +771,7 @@ export default function DashboardHistoryPage() {
       </Card>
 
       {!hasAnyActivity ? (
-        <Card className="border-dashed border-white/12 bg-white/[0.02]">
+        <Card className="border-dashed border-border bg-muted/40">
           <CardHeader>
             <CardTitle>No trade history loaded yet</CardTitle>
             <CardDescription>
@@ -788,7 +788,7 @@ export default function DashboardHistoryPage() {
           </CardContent>
         </Card>
       ) : !hasFilteredResults ? (
-        <Card className="border-dashed border-white/12 bg-white/[0.02]">
+        <Card className="border-dashed border-border bg-muted/40">
           <CardHeader>
             <CardTitle>No matching trades</CardTitle>
             <CardDescription>Try widening the time range, clearing filters, or searching for a different ticker.</CardDescription>
@@ -801,7 +801,7 @@ export default function DashboardHistoryPage() {
         <>
           {/* Top Gainers & Losers */}
           <section className="grid gap-4 xl:grid-cols-3">
-            <Card className="border-white/10">
+            <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><TrendingUp className="size-5 text-emerald-400" /> Top gainers</CardTitle>
                 <CardDescription>Tickers with highest net P&L from closed trades.</CardDescription>
@@ -810,7 +810,7 @@ export default function DashboardHistoryPage() {
                 {topGainers.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No profitable closed trades yet.</p>
                 ) : topGainers.map((s) => (
-                  <div key={`${s.ticker}:${s.broker}`} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+                  <div key={`${s.ticker}:${s.broker}`} className="flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2">
                     <div>
                       <p className="text-sm font-semibold">{s.ticker}</p>
                       <p className="text-xs text-muted-foreground">{s.companyName} • {s.brokerLabel}</p>
@@ -821,7 +821,7 @@ export default function DashboardHistoryPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-white/10">
+            <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><TrendingDown className="size-5 text-red-400" /> Top losers</CardTitle>
                 <CardDescription>Tickers with worst net P&L from closed trades.</CardDescription>
@@ -830,7 +830,7 @@ export default function DashboardHistoryPage() {
                 {topLosers.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No loss-making closed trades.</p>
                 ) : topLosers.map((s) => (
-                  <div key={`${s.ticker}:${s.broker}`} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+                  <div key={`${s.ticker}:${s.broker}`} className="flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2">
                     <div>
                       <p className="text-sm font-semibold">{s.ticker}</p>
                       <p className="text-xs text-muted-foreground">{s.companyName} • {s.brokerLabel}</p>
@@ -841,14 +841,14 @@ export default function DashboardHistoryPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-white/10">
+            <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><BarChart3 className="size-5 text-sky-400" /> Most traded</CardTitle>
                 <CardDescription>Stocks with the highest number of trades.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 {mostTraded.map((s) => (
-                  <div key={`${s.ticker}:${s.broker}`} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+                  <div key={`${s.ticker}:${s.broker}`} className="flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2">
                     <div>
                       <p className="text-sm font-semibold">{s.ticker}</p>
                       <p className="text-xs text-muted-foreground">{s.companyName}</p>
@@ -862,13 +862,13 @@ export default function DashboardHistoryPage() {
 
           {/* Analytics Insights */}
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Avg trade size</p>
+            <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Avg trade size</p>
               <p className="mt-2 text-xl font-semibold">{formatMoney(avgTradeSizeGbp, "GBP")}</p>
               <p className="mt-1 text-xs text-muted-foreground">Mean leg value in filtered range</p>
             </div>
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Best closed trade</p>
+            <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Best closed trade</p>
               {bestClosedTrade?.sell ? (
                 <>
                   <p className="mt-2 text-xl font-semibold text-emerald-400">{formatSignedMoney(bestClosedTrade.plGbp ?? 0)}</p>
@@ -878,8 +878,8 @@ export default function DashboardHistoryPage() {
                 </>
               ) : <p className="mt-2 text-sm text-muted-foreground">—</p>}
             </div>
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Worst closed trade</p>
+            <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Worst closed trade</p>
               {worstClosedTrade?.sell ? (
                 <>
                   <p className="mt-2 text-xl font-semibold text-red-400">{formatSignedMoney(worstClosedTrade.plGbp ?? 0)}</p>
@@ -889,8 +889,8 @@ export default function DashboardHistoryPage() {
                 </>
               ) : <p className="mt-2 text-sm text-muted-foreground">—</p>}
             </div>
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Trading days</p>
+            <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Trading days</p>
               <p className="mt-2 text-xl font-semibold">{cumulativePlSeries.length}</p>
               <p className="mt-1 text-xs text-muted-foreground">Days with at least one closed trade</p>
             </div>
@@ -898,7 +898,7 @@ export default function DashboardHistoryPage() {
 
           {/* Charts */}
           <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
-            <Card className="border-white/10">
+            <Card className="border-border">
               <CardHeader>
                 <CardTitle>Cumulative realised P/L</CardTitle>
                 <CardDescription>Profit and loss from closed trades over time (FIFO / broker-reported).</CardDescription>
@@ -926,7 +926,7 @@ export default function DashboardHistoryPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-white/10">
+            <Card className="border-border">
               <CardHeader>
                 <CardTitle>Broker breakdown</CardTitle>
                 <CardDescription>Open value and realised P/L per broker.</CardDescription>
@@ -950,7 +950,7 @@ export default function DashboardHistoryPage() {
                 </div>
                 <div className="space-y-2">
                   {brokerBreakdown.map((entry, index) => (
-                    <div key={entry.broker} className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+                    <div key={entry.broker} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3 py-2">
                       <div className="flex items-center gap-2">
                         <span className="size-2 rounded-full" style={{ backgroundColor: brokerColours[index % brokerColours.length] }} />
                         <span className="text-sm font-medium">{entry.brokerLabel}</span>
@@ -970,7 +970,7 @@ export default function DashboardHistoryPage() {
 
           {/* Monthly realised P/L */}
           {monthlyPl.length > 1 && (
-            <Card className="border-white/10">
+            <Card className="border-border">
               <CardHeader>
                 <CardTitle>Monthly realised P/L</CardTitle>
                 <CardDescription>Closed-trade profit and loss by month in the selected range.</CardDescription>
@@ -993,7 +993,7 @@ export default function DashboardHistoryPage() {
           {viewMode === "trades" ? (
             <HistoryTradeCyclesTable activity={displayActivity} />
           ) : (
-            <Card className="border-white/10">
+            <Card className="border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Per-ticker summary ({tickerSummaries.length})</CardTitle>
               </CardHeader>

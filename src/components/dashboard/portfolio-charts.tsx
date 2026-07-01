@@ -45,7 +45,7 @@ export function PortfolioCharts({ insights, onHighlightAsset }: PortfolioChartsP
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1.8fr_1fr]">
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-2">
             <CardTitle>Portfolio value</CardTitle>
@@ -57,7 +57,7 @@ export function PortfolioCharts({ insights, onHighlightAsset }: PortfolioChartsP
             ) : null}
           </div>
           {hasHistory ? (
-            <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+            <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-muted/40 p-1">
               {timeRanges.map((range) => (
                 <Button
                   key={range}
@@ -90,14 +90,14 @@ export function PortfolioCharts({ insights, onHighlightAsset }: PortfolioChartsP
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] text-center text-sm text-muted-foreground">
+            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 text-center text-sm text-muted-foreground">
               Import or sync more than one snapshot to unlock portfolio history.
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader>
           <CardTitle>Asset allocation</CardTitle>
           <CardDescription>{hasAllocation ? "Breakdown of the current holdings loaded in the dashboard." : "No holdings are loaded yet."}</CardDescription>
@@ -136,7 +136,7 @@ export function PortfolioCharts({ insights, onHighlightAsset }: PortfolioChartsP
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] text-center text-sm text-muted-foreground">
+              <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 text-center text-sm text-muted-foreground">
                 Add positions to see the portfolio split.
               </div>
             )}
@@ -144,7 +144,7 @@ export function PortfolioCharts({ insights, onHighlightAsset }: PortfolioChartsP
 
           <div className="space-y-2">
             {hasAllocation ? insights.assetAllocation.map((entry, index) => (
-              <div key={entry.label} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
+              <div key={entry.label} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="size-2 rounded-full" style={{ backgroundColor: donutColours[index % donutColours.length] }} />
                   <div>

@@ -35,7 +35,7 @@ function TaxYearSection({ summary, defaultOpen }: { summary: CgtTaxYearSummary; 
   const netIsGain = summary.netGainOrLoss >= 0
 
   return (
-    <Card className="border-white/10">
+    <Card className="border-border">
       <CardHeader
         className="cursor-pointer select-none"
         onClick={() => setOpen((v) => !v)}
@@ -50,17 +50,17 @@ function TaxYearSection({ summary, defaultOpen }: { summary: CgtTaxYearSummary; 
           </div>
           <div className="flex flex-wrap items-center gap-4 text-right">
             <div>
-              <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Proceeds</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Proceeds</p>
               <p className="text-sm font-semibold tabular-nums">{formatMoney(summary.totalProceeds, "GBP")}</p>
             </div>
             <div>
-              <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Net gain / loss</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Net gain / loss</p>
               <p className={`text-sm font-semibold tabular-nums ${netIsGain ? "text-emerald-400" : "text-red-400"}`}>
                 {formatSignedMoney(summary.netGainOrLoss)}
               </p>
             </div>
             <div>
-              <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Annual exemption used</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Annual exemption used</p>
               <p className="text-sm font-semibold tabular-nums">{formatMoney(summary.annualExemptionUsed, "GBP")}</p>
             </div>
             {hasEstimates && (
@@ -75,20 +75,20 @@ function TaxYearSection({ summary, defaultOpen }: { summary: CgtTaxYearSummary; 
       {open && (
         <CardContent className="space-y-4 pt-0">
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-              <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Total gains</p>
+            <div className="rounded-xl border border-border bg-muted/40 p-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Total gains</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-400">
                 +{formatMoney(summary.totalGains, "GBP")}
               </p>
             </div>
-            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-              <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Total losses</p>
+            <div className="rounded-xl border border-border bg-muted/40 p-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Total losses</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-red-400">
                 -{formatMoney(summary.totalLosses, "GBP")}
               </p>
             </div>
-            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-              <p className="text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="rounded-xl border border-border bg-muted/40 p-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">
                 Net {netIsGain ? "gain" : "loss"}
               </p>
               <p className={`mt-1 text-lg font-semibold tabular-nums ${netIsGain ? "text-emerald-400" : "text-red-400"}`}>
@@ -97,7 +97,7 @@ function TaxYearSection({ summary, defaultOpen }: { summary: CgtTaxYearSummary; 
             </div>
           </div>
 
-          <div className="overflow-auto rounded-xl border border-white/8">
+          <div className="overflow-auto rounded-xl border border-border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -236,7 +236,7 @@ export default function TaxPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => downloadCsv(summaries)}
-                className="gap-2 rounded-xl border-white/10 bg-white/[0.03]"
+                className="gap-2 rounded-xl border-border bg-muted/40"
               >
                 <Download className="size-4" />
                 Export CSV
@@ -247,7 +247,7 @@ export default function TaxPage() {
               size="sm"
               onClick={() => void fetchPortfolio({ refresh: true })}
               disabled={isRefreshing}
-              className="gap-2 rounded-xl border-white/10 bg-white/[0.03]"
+              className="gap-2 rounded-xl border-border bg-muted/40"
             >
               <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
               {isRefreshing ? "Syncing…" : "Refresh"}
@@ -257,7 +257,7 @@ export default function TaxPage() {
       />
 
       {/* Disclaimer */}
-      <div className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+      <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
         <p className="text-sm text-amber-300/90">
           <span className="font-semibold">Estimate only.</span> These figures use basic FIFO round-trip matching and
@@ -283,8 +283,8 @@ export default function TaxPage() {
               value: `${formatMoney(currentTaxYear.annualExemptionUsed, "GBP")} / £3,000`,
             },
           ].map((kpi) => (
-            <div key={kpi.label} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{kpi.label}</p>
+            <div key={kpi.label} className="rounded-lg border border-border bg-card p-4 card-shadow">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{kpi.label}</p>
               <p className={`mt-2 text-2xl font-semibold tracking-tight ${"coloured" in kpi && kpi.coloured ? (kpi.positive ? "text-emerald-400" : "text-red-400") : ""}`}>
                 {kpi.value}
               </p>
@@ -294,7 +294,7 @@ export default function TaxPage() {
       )}
 
       {summaries.length === 0 ? (
-        <Card className="border-white/10">
+        <Card className="border-border">
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             No closed trades found. Sync your brokers and ensure trade history is loaded.
           </CardContent>

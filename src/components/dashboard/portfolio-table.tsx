@@ -53,7 +53,7 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
   }
 
   return (
-    <Card className="border-white/10">
+    <Card className="border-border">
       <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
         <CardTitle className="text-base">Holdings ({portfolio.length})</CardTitle>
         <select
@@ -63,7 +63,7 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
             setExpandedId(null)
             setCollapsedGroups(new Set())
           }}
-          className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
+          className="rounded-lg border border-border bg-muted/40 px-2 py-1 text-xs outline-none"
         >
           <option value="none">No grouping</option>
           <option value="broker">Group by broker</option>
@@ -104,7 +104,7 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
                   <Fragment key={groupKey}>
                     {groupBy !== "none" && (
                       <TableRow
-                        className="cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]"
+                        className="cursor-pointer bg-muted/40 hover:bg-muted/40"
                         onClick={() => toggleGroup(groupKey)}
                       >
                         <TableCell colSpan={8} className="py-2">

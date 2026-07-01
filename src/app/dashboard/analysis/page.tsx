@@ -101,14 +101,14 @@ function getRecommendationClassName(recommendation: string) {
   if (["buy", "bullish", "strong_buy", "strong buy"].includes(normalized)) return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
   if (["sell", "bearish", "strong_sell", "strong sell"].includes(normalized)) return "border-red-500/20 bg-red-500/10 text-red-300"
   if (["hold", "neutral", "watch"].includes(normalized)) return "border-amber-500/20 bg-amber-500/10 text-amber-200"
-  return "border-white/10 bg-white/[0.03] text-muted-foreground"
+  return "border-border bg-muted/40 text-muted-foreground"
 }
 
 function getStatusClassName(status: AnalysisTargetStatus) {
   if (status === "pending") return "border-sky-500/20 bg-sky-500/10 text-sky-300"
   if (status === "running") return "border-violet-500/20 bg-violet-500/10 text-violet-300"
   if (status === "analyzed") return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-  return "border-white/10 bg-white/[0.03] text-muted-foreground"
+  return "border-border bg-muted/40 text-muted-foreground"
 }
 
 function hasRawOutput(value: unknown) {
@@ -162,8 +162,8 @@ function formatInstrumentPrice(instrument: InstrumentSearchResult) {
 
 function DetailBlock({ title, children }: { title: string; children: string | null }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
-      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
+    <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</p>
       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground/90">{children || `No ${title.toLowerCase()} saved.`}</p>
     </div>
   )
@@ -379,10 +379,10 @@ export default function DashboardAnalysisPage() {
 
   return (
     <PageShell>
-      <div className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-primary/14 via-white/[0.04] to-background p-5 shadow-[0_20px_80px_rgba(2,6,23,0.2)]">
+      <div className="rounded-[2rem] border border-border bg-gradient-to-br from-primary/14 via-white/[0.04] to-background p-5 shadow-[0_20px_80px_rgba(2,6,23,0.2)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
-            <div className="mb-3 flex size-11 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+            <div className="mb-3 flex size-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
               <Brain className="size-5" />
             </div>
             <h1 className="text-3xl font-bold tracking-tight">AI analysis</h1>
@@ -396,7 +396,7 @@ export default function DashboardAnalysisPage() {
             size="sm"
             onClick={() => void loadDashboard("refresh")}
             disabled={isRefreshing}
-            className="gap-2 rounded-xl border-white/10 bg-white/[0.04]"
+            className="gap-2 rounded-xl border-border bg-muted/40"
           >
             <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
             {isRefreshing ? "Refreshing..." : "Refresh"}
@@ -405,24 +405,24 @@ export default function DashboardAnalysisPage() {
       </div>
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Source tickers</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Source tickers</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{targets.length}</p>
           <p className="mt-1 text-xs text-muted-foreground">{pendingTargets} waiting for analysis</p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Analysed</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Analysed</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{analyzedTickers}</p>
           <p className="mt-1 text-xs text-muted-foreground">Distinct symbols with results</p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Latest run</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Latest run</p>
           <p className="mt-2 truncate text-lg font-semibold tracking-tight">{latestAnalysis?.ticker ?? "None"}</p>
           <p className="mt-1 text-xs text-muted-foreground">{latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : "No analysis saved yet"}</p>
         </div>
       </section>
 
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader>
           <CardTitle className="text-base">Analysis filters</CardTitle>
           <CardDescription>Filter saved analysis and the source queue by model, recommendation, provider, date, and target status.</CardDescription>
@@ -430,32 +430,32 @@ export default function DashboardAnalysisPage() {
         <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <label className="space-y-1.5 text-sm">
             <span className="text-xs font-medium text-muted-foreground">Model</span>
-            <select value={modelFilter} onChange={(event) => setModelFilter(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+            <select value={modelFilter} onChange={(event) => setModelFilter(event.target.value)} className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none">
               <option value="all">All models</option>
               {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
             </select>
           </label>
           <label className="space-y-1.5 text-sm">
             <span className="text-xs font-medium text-muted-foreground">Recommendation</span>
-            <select value={recommendationFilter} onChange={(event) => setRecommendationFilter(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+            <select value={recommendationFilter} onChange={(event) => setRecommendationFilter(event.target.value)} className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none">
               <option value="all">All recommendations</option>
               {recommendationOptions.map((recommendation) => <option key={recommendation} value={recommendation}>{recommendation}</option>)}
             </select>
           </label>
           <label className="space-y-1.5 text-sm">
             <span className="text-xs font-medium text-muted-foreground">Provider</span>
-            <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+            <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)} className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none">
               <option value="all">All providers</option>
               {providerOptions.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
             </select>
           </label>
           <label className="space-y-1.5 text-sm">
             <span className="text-xs font-medium text-muted-foreground">Analysis date</span>
-            <input type="date" value={dateFilter === "all" ? "" : dateFilter} onChange={(event) => setDateFilter(event.target.value || "all")} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none" />
+            <input type="date" value={dateFilter === "all" ? "" : dateFilter} onChange={(event) => setDateFilter(event.target.value || "all")} className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none" />
           </label>
           <label className="space-y-1.5 text-sm">
             <span className="text-xs font-medium text-muted-foreground">Target status</span>
-            <select value={targetStatusFilter} onChange={(event) => setTargetStatusFilter(event.target.value as AnalysisTargetStatus | "all")} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none">
+            <select value={targetStatusFilter} onChange={(event) => setTargetStatusFilter(event.target.value as AnalysisTargetStatus | "all")} className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none">
               <option value="all">All targets</option>
               <option value="pending">Pending</option>
               <option value="running">Running</option>
@@ -467,14 +467,14 @@ export default function DashboardAnalysisPage() {
       </Card>
 
       {comparisonGroups.length > 0 ? (
-        <Card className="border-white/10">
+        <Card className="border-border">
           <CardHeader>
             <CardTitle className="text-base">Recommendation comparison</CardTitle>
             <CardDescription>Recent changes by ticker across dates or models.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 lg:grid-cols-2">
             {comparisonGroups.map((group) => (
-              <div key={group.ticker} className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
+              <div key={group.ticker} className="rounded-lg border border-border bg-card p-4 card-shadow">
                 <p className="font-medium">{group.ticker}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {group.analyses.slice(0, 5).map((analysis) => (
@@ -490,7 +490,7 @@ export default function DashboardAnalysisPage() {
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <Card className="border-white/10">
+        <Card className="border-border">
           <CardHeader>
             <CardTitle className="text-base">Add ticker for AI analysis</CardTitle>
             <CardDescription>This writes to `llm_analysis_targets`, which your worker can use as its source queue.</CardDescription>
@@ -505,7 +505,7 @@ export default function DashboardAnalysisPage() {
                     value={tickerSearch}
                     onChange={(event) => setTickerSearch(event.target.value)}
                     placeholder="Search ticker or company..."
-                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
+                    className="w-full rounded-xl border border-border bg-muted/40 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
                   />
                 </div>
                 <span className="block text-xs text-muted-foreground">
@@ -514,7 +514,7 @@ export default function DashboardAnalysisPage() {
               </label>
 
               {tickerSearchResults.length > 0 ? (
-                <div className="max-h-72 space-y-2 overflow-auto rounded-2xl border border-white/8 bg-white/[0.025] p-2">
+                <div className="max-h-72 space-y-2 overflow-auto rounded-xl border border-border bg-muted/40 p-2">
                   {tickerSearchResults.map((instrument) => {
                     const companyName = getInstrumentCompanyName(instrument)
                     const key = `${instrument.broker}:${instrument.id ?? instrument.ticker}`
@@ -524,14 +524,14 @@ export default function DashboardAnalysisPage() {
                         key={key}
                         type="button"
                         onClick={() => selectInstrument(instrument)}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-white/[0.04]"
+                        className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted/40"
                       >
                         <span className="min-w-0">
                           <span className="block font-medium">{instrument.ticker}</span>
                           <span className="block truncate text-xs text-muted-foreground">{companyName}</span>
                         </span>
                         <span className="flex shrink-0 flex-col items-end gap-1">
-                          <Badge variant="outline" className="border-white/10 bg-white/[0.03] text-muted-foreground">
+                          <Badge variant="outline" className="border-border bg-muted/40 text-muted-foreground">
                             {instrument.broker}
                           </Badge>
                           <span className="text-xs text-muted-foreground">{formatInstrumentPrice(instrument)}</span>
@@ -541,7 +541,7 @@ export default function DashboardAnalysisPage() {
                   })}
                 </div>
               ) : tickerSearch.trim().length >= 2 && !isSearchingTickers ? (
-                <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-3 text-xs text-muted-foreground">
+                <div className="rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
                   No matching synced positions or broker instruments found. You can still enter a ticker manually.
                 </div>
               ) : null}
@@ -553,7 +553,7 @@ export default function DashboardAnalysisPage() {
                     value={newTicker}
                     onChange={(event) => setNewTicker(event.target.value.toUpperCase())}
                     placeholder="RR"
-                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-primary/50"
+                    className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none focus:border-primary/50"
                   />
                 </label>
                 <label className="space-y-1.5">
@@ -562,7 +562,7 @@ export default function DashboardAnalysisPage() {
                     value={newBroker}
                     onChange={(event) => setNewBroker(event.target.value)}
                     placeholder="etoro"
-                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-primary/50"
+                    className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none focus:border-primary/50"
                   />
                 </label>
               </div>
@@ -572,7 +572,7 @@ export default function DashboardAnalysisPage() {
                   value={newCompanyName}
                   onChange={(event) => setNewCompanyName(event.target.value)}
                   placeholder="Rolls-Royce Holdings"
-                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-primary/50"
+                  className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none focus:border-primary/50"
                 />
               </label>
               <label className="space-y-1.5">
@@ -582,7 +582,7 @@ export default function DashboardAnalysisPage() {
                   onChange={(event) => setNewNotes(event.target.value)}
                   placeholder="Optional context for the local analysis service"
                   rows={3}
-                  className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-primary/50"
+                  className="w-full resize-none rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none focus:border-primary/50"
                 />
               </label>
               <Button type="submit" disabled={isAddingTarget} className="w-full gap-2 rounded-xl">
@@ -593,7 +593,7 @@ export default function DashboardAnalysisPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-white/10">
+        <Card className="border-border">
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -606,7 +606,7 @@ export default function DashboardAnalysisPage() {
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   placeholder="Search ticker..."
-                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
+                  className="w-full rounded-xl border border-border bg-muted/40 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
                 />
               </div>
             </div>
@@ -651,7 +651,7 @@ export default function DashboardAnalysisPage() {
         </Card>
       </div>
 
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -715,7 +715,7 @@ export default function DashboardAnalysisPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => setExpandedAnalysisId(isExpanded ? null : analysis.id)}
-                          className="gap-1 rounded-xl border-white/10 bg-white/[0.03]"
+                          className="gap-1 rounded-xl border-border bg-muted/40"
                         >
                           {isExpanded ? "Hide" : "Show"} analysis
                           <ChevronDown className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")} />
@@ -723,7 +723,7 @@ export default function DashboardAnalysisPage() {
                       </TableCell>
                     </TableRow>
                     {isExpanded ? (
-                      <TableRow key={`${analysis.id}:expanded`} className="bg-white/[0.018] hover:bg-white/[0.018]">
+                      <TableRow key={`${analysis.id}:expanded`} className="bg-muted/40 hover:bg-muted/40">
                         <TableCell colSpan={7} className="whitespace-normal p-4">
                           <div className="grid gap-4 lg:grid-cols-2">
                             <DetailBlock title="Key reasons">{keyReasons}</DetailBlock>
@@ -731,8 +731,8 @@ export default function DashboardAnalysisPage() {
                             <DetailBlock title="Thesis">{analysis.thesis}</DetailBlock>
                             <DetailBlock title="Risks">{analysis.risks}</DetailBlock>
                             <DetailBlock title="Prompt">{analysis.prompt}</DetailBlock>
-                            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Metadata</p>
+                            <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+                              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Metadata</p>
                               <dl className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                                 <div><dt className="text-xs uppercase tracking-[0.16em]">Provider</dt><dd className="mt-0.5 text-foreground">{analysis.provider}</dd></div>
                                 <div><dt className="text-xs uppercase tracking-[0.16em]">Model</dt><dd className="mt-0.5 text-foreground">{analysis.model}</dd></div>
@@ -742,7 +742,7 @@ export default function DashboardAnalysisPage() {
                             </div>
                           </div>
                           {hasRawOutput(analysis.rawOutput) ? (
-                            <details className="mt-4 rounded-2xl border border-white/8 bg-background/60 p-4">
+                            <details className="mt-4 rounded-xl border border-border bg-background/60 p-4">
                               <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Raw model output</summary>
                               <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{JSON.stringify(analysis.rawOutput, null, 2)}</pre>
                             </details>

@@ -8,7 +8,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto rounded-2xl border border-white/8 bg-background/35"
+      className="relative w-full overflow-x-auto rounded-lg border border-border bg-card"
     >
       <table
         data-slot="table"
@@ -23,7 +23,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("bg-white/[0.03] [&_tr]:border-b [&_tr]:border-white/8", className)}
+      className={cn("bg-muted/40 [&_tr]:border-b [&_tr]:border-border", className)}
       {...props}
     />
   )
@@ -57,7 +57,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b border-white/8 transition-colors hover:bg-white/[0.025] has-aria-expanded:bg-white/[0.03] data-[state=selected]:bg-white/[0.03]",
+        "border-b border-border transition-colors hover:bg-muted/40 has-aria-expanded:bg-muted/40 data-[state=selected]:bg-muted/40",
         className
       )}
       {...props}
@@ -70,7 +70,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-11 px-3 text-left align-middle text-[0.68rem] font-semibold whitespace-nowrap uppercase tracking-[0.18em] text-muted-foreground [&:has([role=checkbox])]:pr-0",
+        "h-10 px-3 text-left align-middle text-xs font-semibold whitespace-nowrap uppercase tracking-widest text-muted-foreground [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}

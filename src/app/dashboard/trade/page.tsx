@@ -227,7 +227,7 @@ export default function TradePage() {
                 }}
                 onKeyDown={(event) => event.key === "Enter" && void searchInstruments()}
                 placeholder="Search ticker, e.g. AAPL"
-                className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm outline-none focus:border-primary/50"
+                className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm outline-none focus:border-primary/50"
               />
               <Button onClick={() => void searchInstruments()} disabled={isSearching || query.trim().length < 2}>
                 {isSearching ? <RefreshCw className="size-4 animate-spin" /> : <Search className="size-4" />}
@@ -242,10 +242,10 @@ export default function TradePage() {
                     key={`${instrument.broker}:${instrument.id}`}
                     type="button"
                     onClick={() => selectInstrument(instrument)}
-                    className={`rounded-2xl border px-4 py-3 text-left text-sm transition hover:border-primary/40 ${
+                    className={`rounded-xl border px-4 py-3 text-left text-sm transition hover:border-primary/40 ${
                       selectedInstrument?.broker === instrument.broker && selectedInstrument.id === instrument.id
                         ? "border-primary/50 bg-primary/10"
-                        : "border-white/8 bg-white/[0.03]"
+                        : "border-border bg-muted/40"
                     }`}
                   >
                     <span className="font-semibold">{instrument.ticker}</span>
@@ -258,7 +258,7 @@ export default function TradePage() {
             ) : null}
 
             {selectedInstrument ? (
-              <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 text-sm">
+              <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm">
                 <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Selected API result</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <strong>{selectedInstrument.ticker}</strong>
@@ -269,7 +269,7 @@ export default function TradePage() {
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">This selected instrument is what fills the order request. Search and select another result to trade a different ticker or broker.</p>
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
                 No ticker selected yet. Search and choose a result before previewing an order.
               </div>
             )}
@@ -279,17 +279,17 @@ export default function TradePage() {
                 <input
                   value={selectedInstrument ? getBrokerLabel(selectedInstrument.broker) : "Select ticker from search"}
                   readOnly
-                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground"
+                  className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-foreground"
                 />
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Side
-                <select value={form.side} onChange={(event) => updateForm("side", event.target.value as typeof form.side)} className="w-full rounded-xl border border-white/10 bg-background px-3 py-2 text-sm text-foreground">
+                <select value={form.side} onChange={(event) => updateForm("side", event.target.value as typeof form.side)} className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground">
                   <option value="buy">Buy</option>
                   <option value="sell">Sell</option>
                 </select>
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Order type
-                <select value={form.orderType} onChange={(event) => updateForm("orderType", event.target.value as typeof form.orderType)} className="w-full rounded-xl border border-white/10 bg-background px-3 py-2 text-sm text-foreground">
+                <select value={form.orderType} onChange={(event) => updateForm("orderType", event.target.value as typeof form.orderType)} className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground">
                   <option value="market">Market</option>
                   <option value="limit">Limit</option>
                   <option value="stop">Stop</option>
@@ -300,31 +300,31 @@ export default function TradePage() {
 
             <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Input
-                <select value={form.inputMode} onChange={(event) => updateForm("inputMode", event.target.value as typeof form.inputMode)} className="w-full rounded-xl border border-white/10 bg-background px-3 py-2 text-sm text-foreground">
+                <select value={form.inputMode} onChange={(event) => updateForm("inputMode", event.target.value as typeof form.inputMode)} className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground">
                   <option value="quantity">Quantity</option>
                   <option value="value">Value</option>
                 </select>
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Quantity
-                <input value={form.quantity} onChange={(event) => updateForm("quantity", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm" />
+                <input value={form.quantity} onChange={(event) => updateForm("quantity", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm" />
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Value
-                <input value={form.value} onChange={(event) => updateForm("value", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm" />
+                <input value={form.value} onChange={(event) => updateForm("value", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm" />
               </label>
             </div>
 
             <div className="grid gap-3 md:grid-cols-4">
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Limit price
-                <input value={form.limitPrice} onChange={(event) => updateForm("limitPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm" />
+                <input value={form.limitPrice} onChange={(event) => updateForm("limitPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm" />
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Stop price
-                <input value={form.stopPrice} onChange={(event) => updateForm("stopPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm" />
+                <input value={form.stopPrice} onChange={(event) => updateForm("stopPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm" />
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Stop loss
-                <input value={form.stopLossPrice} onChange={(event) => updateForm("stopLossPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm" />
+                <input value={form.stopLossPrice} onChange={(event) => updateForm("stopLossPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm" />
               </label>
               <label className="space-y-1 text-xs font-medium text-muted-foreground">Take profit
-                <input value={form.takeProfitPrice} onChange={(event) => updateForm("takeProfitPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm" />
+                <input value={form.takeProfitPrice} onChange={(event) => updateForm("takeProfitPrice", event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm" />
               </label>
             </div>
 
@@ -344,7 +344,7 @@ export default function TradePage() {
             <CardContent className="space-y-4">
               {preview ? (
                 <>
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm">
+                  <div className="rounded-lg border border-border bg-card p-4 card-shadow text-sm">
                     <div className="flex items-center justify-between"><span>Action</span><strong>{preview.side.toUpperCase()} {preview.ticker}</strong></div>
                     <div className="mt-2 flex items-center justify-between"><span>Type</span><strong>{preview.orderType}</strong></div>
                     <div className="mt-2 flex items-center justify-between"><span>Estimated notional</span><strong>{currency(preview.estimatedNotional)}</strong></div>
@@ -353,7 +353,7 @@ export default function TradePage() {
                     {preview.warnings.map((warning) => <p key={warning} className="text-xs leading-5 text-amber-200">{warning}</p>)}
                   </div>
                   <label className="space-y-1 text-xs font-medium text-muted-foreground">Confirmation phrase: <span className="text-foreground">{preview.requiredConfirmation}</span>
-                    <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm" />
+                    <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm" />
                   </label>
                   <Button variant="destructive" onClick={() => void submitOrder()} disabled={!confirmationMatches || isSubmitting}>
                     Submit live order
@@ -374,7 +374,7 @@ export default function TradePage() {
               {orders.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No order attempts yet.</p>
               ) : orders.map((order) => (
-                <div key={order.id} className="rounded-2xl border border-white/8 bg-white/[0.03] p-3 text-sm">
+                <div key={order.id} className="rounded-xl border border-border bg-muted/40 p-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-semibold">{order.side.toUpperCase()} {order.ticker}</span>
                     <Badge variant={order.status === "failed" || order.status === "rejected" ? "destructive" : "secondary"}>{order.status}</Badge>

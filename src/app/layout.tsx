@@ -51,19 +51,19 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <ThemeProvider>
           <AlertPoller />
-          <div className="mx-auto flex min-h-screen w-full max-w-[120rem]">
-            <Suspense fallback={<div className="hidden w-[17.5rem] shrink-0 border-r border-white/8 bg-sidebar/70 backdrop-blur md:block xl:w-72" />}>
+          <div className="flex min-h-screen w-full">
+            <Suspense fallback={<div className="hidden w-60 shrink-0 border-r border-border bg-sidebar md:block xl:w-64" />}>
               <DesktopSidebar />
             </Suspense>
             <main className="flex min-h-screen min-w-0 flex-1 flex-col">
-              <Suspense fallback={<div className="sticky top-0 z-20 h-[73px] border-b border-white/8 bg-background/88 md:hidden" />}>
+              <Suspense fallback={<div className="sticky top-0 z-20 h-[53px] border-b border-border bg-background md:hidden" />}>
                 <MobileHeader />
               </Suspense>
-              <div className="flex-1 overflow-y-auto pb-24 md:pb-0">
+              <div className="flex-1 pb-20 md:pb-0">
                 {children}
               </div>
             </main>
-            <Suspense fallback={<div className="fixed inset-x-0 bottom-0 z-20 h-20 md:hidden" />}>
+            <Suspense fallback={<div className="fixed inset-x-0 bottom-0 z-20 h-16 border-t border-border bg-background md:hidden" />}>
               <MobileBottomNav />
             </Suspense>
           </div>

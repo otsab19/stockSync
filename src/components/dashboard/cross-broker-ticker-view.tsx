@@ -53,14 +53,14 @@ export function CrossBrokerTickerView({ portfolio }: CrossBrokerTickerViewProps)
   }
 
   return (
-    <Card className="border-white/10 bg-white/[0.02]">
+    <Card className="border-border bg-muted/40">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Same ticker, multiple brokers</CardTitle>
         <CardDescription>Combined exposure when you hold the same symbol on more than one broker.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2">
         {groups.map((group) => (
-          <div key={group.ticker} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <div key={group.ticker} className="rounded-lg border border-border bg-card p-4 card-shadow">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-semibold">{group.ticker}</p>

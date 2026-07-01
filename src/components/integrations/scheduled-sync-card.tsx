@@ -66,10 +66,10 @@ export function ScheduledSyncCard() {
   }
 
   return (
-    <Card className="border-white/10 bg-white/[0.02]">
+    <Card className="border-border bg-muted/40">
       <CardHeader>
         <div className="flex items-center gap-2">
-          <span className="flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
+          <span className="flex size-9 items-center justify-center rounded-xl border border-border bg-muted/40">
             <Clock3 className="size-4 text-muted-foreground" />
           </span>
           <div>
@@ -83,7 +83,7 @@ export function ScheduledSyncCard() {
       <CardContent className="space-y-3">
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
         {brokers.map((entry) => (
-          <div key={entry.broker} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3">
+          <div key={entry.broker} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3 py-3">
             <div>
               <p className="font-medium">{entry.label}</p>
               <p className="text-xs text-muted-foreground">

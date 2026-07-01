@@ -73,8 +73,8 @@ function PeriodTransactionList({
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
       {tickerGroups.map((tickerGroup) => (
-        <section key={tickerGroup.ticker} className="overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 bg-white/[0.03] px-4 py-3">
+        <section key={tickerGroup.ticker} className="overflow-hidden rounded-xl border border-border bg-muted/40">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3">
             <div>
               <p className="text-sm font-semibold">{tickerGroup.ticker}</p>
               {tickerGroup.companyName.trim().toUpperCase() !== tickerGroup.ticker.trim().toUpperCase() ? (
@@ -89,7 +89,7 @@ function PeriodTransactionList({
           <div className="divide-y divide-white/6">
             {tickerGroup.brokers.map((brokerGroup) => (
               <div key={`${tickerGroup.ticker}:${brokerGroup.broker}`}>
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white/[0.015] px-4 py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/40 px-4 py-2.5">
                   <div className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">{brokerGroup.brokerLabel}</span>
                     <span className="ml-2">
@@ -103,7 +103,7 @@ function PeriodTransactionList({
 
                 <div className="overflow-x-auto">
                   <div className="min-w-[48rem]">
-                    <div className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] gap-3 border-b border-white/6 px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    <div className="grid grid-cols-[minmax(9rem,1.1fr)_4.5rem_minmax(5rem,0.7fr)_minmax(5.5rem,0.8fr)_minmax(5rem,0.7fr)] gap-3 border-b border-white/6 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                       <span>Time</span>
                       <span>Side</span>
                       <span className="text-right">Shares</span>
@@ -182,7 +182,7 @@ export function ActivityPlChart({
 
   return (
     <>
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader className="gap-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -197,7 +197,7 @@ export function ActivityPlChart({
                   key={value}
                   size="sm"
                   variant={groupBy === value ? "default" : "outline"}
-                  className={groupBy === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                  className={groupBy === value ? "" : "rounded-xl border-border bg-muted/40"}
                   onClick={() => {
                     setGroupBy(value)
                     setSelectedBucket(null)
@@ -282,7 +282,7 @@ export function ActivityPlChart({
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                <div className="rounded-lg border border-border bg-card p-4 card-shadow">
                   <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Realised P/L</p>
                   <p className={`mt-2 text-2xl font-semibold tabular-nums ${selectedBucket.realisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {formatSignedMoney(selectedBucket.realisedPlGbp)}

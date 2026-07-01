@@ -167,7 +167,7 @@ function ActivityTable({
 
             return (
               <Fragment key={event.id}>
-                <TableRow className="bg-white/[0.01]">
+                <TableRow className="bg-muted/40">
                   <TableCell><span className="text-xs">{formatLongDateTime(event.timestamp)}</span></TableCell>
                   <TableCell>
                     <div className="flex flex-col">
@@ -196,7 +196,7 @@ function ActivityTable({
                     <button
                       type="button"
                       onClick={() => setExpandedEventId(isExpanded ? null : event.id)}
-                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                     >
                       Details
                       <ChevronDown className={cn("size-3 transition-transform", isExpanded && "rotate-180")} />
@@ -204,7 +204,7 @@ function ActivityTable({
                   </TableCell>
                 </TableRow>
                 {isExpanded ? (
-                  <TableRow className="bg-white/[0.018] hover:bg-white/[0.018]">
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableCell colSpan={side === "sell" ? 8 : 7} className="whitespace-normal p-4">
                       <div className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
                         <div><span className="block uppercase tracking-[0.16em]">Order type</span><span className="mt-1 block text-foreground">{event.orderType || "Not provided"}</span></div>
@@ -237,7 +237,7 @@ function ActivitySideCards({
 }) {
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -257,7 +257,7 @@ function ActivitySideCards({
         </CardContent>
       </Card>
 
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -421,7 +421,7 @@ export default function DashboardActivityPage() {
             size="sm"
             onClick={() => void fetchPortfolio({ refresh: true })}
             disabled={isRefreshing}
-            className="gap-2 rounded-xl border-white/10 bg-white/[0.03]"
+            className="gap-2 rounded-xl border-border bg-muted/40"
           >
             <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
             {isRefreshing ? "Syncing..." : "Sync now"}
@@ -429,7 +429,7 @@ export default function DashboardActivityPage() {
         }
       />
 
-      <Card className="border-white/10">
+      <Card className="border-border">
         <CardHeader className="gap-4 pb-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -442,7 +442,7 @@ export default function DashboardActivityPage() {
                   key={value}
                   size="sm"
                   variant={preset === value ? "default" : "outline"}
-                  className={preset === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                  className={preset === value ? "" : "rounded-xl border-border bg-muted/40"}
                   onClick={() => setPreset(value)}
                 >
                   {presetLabels[value]}
@@ -458,7 +458,7 @@ export default function DashboardActivityPage() {
                   type="date"
                   value={customStart}
                   onChange={(event) => setCustomStart(event.target.value)}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-foreground outline-none"
+                  className="rounded-lg border border-border bg-muted/40 px-2 py-1.5 text-sm text-foreground outline-none"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -467,7 +467,7 @@ export default function DashboardActivityPage() {
                   type="date"
                   value={customEnd}
                   onChange={(event) => setCustomEnd(event.target.value)}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-foreground outline-none"
+                  className="rounded-lg border border-border bg-muted/40 px-2 py-1.5 text-sm text-foreground outline-none"
                 />
               </label>
             </div>
@@ -484,7 +484,7 @@ export default function DashboardActivityPage() {
                 key={value}
                 size="sm"
                 variant={activityCategory === value ? "default" : "outline"}
-                className={activityCategory === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                className={activityCategory === value ? "" : "rounded-xl border-border bg-muted/40"}
                 onClick={() => setActivityCategory(value)}
               >
                 {label}
@@ -498,7 +498,7 @@ export default function DashboardActivityPage() {
                 key={value}
                 size="sm"
                 variant={groupMode === value ? "default" : "outline"}
-                className={groupMode === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                className={groupMode === value ? "" : "rounded-xl border-border bg-muted/40"}
                 onClick={() => setGroupMode(value)}
               >
                 {groupModeLabels[value]}
@@ -512,7 +512,7 @@ export default function DashboardActivityPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search ticker, company, broker, or order type..."
-                className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
+                className="w-full rounded-xl border border-border bg-muted/40 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
               />
             </label>
             <div className="flex flex-wrap items-center gap-2">
@@ -522,7 +522,7 @@ export default function DashboardActivityPage() {
                   key={value}
                   size="sm"
                   variant={sortBy === value ? "default" : "outline"}
-                  className={sortBy === value ? "" : "rounded-xl border-white/10 bg-white/[0.03]"}
+                  className={sortBy === value ? "" : "rounded-xl border-border bg-muted/40"}
                   onClick={() => setSortBy(value)}
                 >
                   {activitySortLabels[value]}
@@ -534,18 +534,18 @@ export default function DashboardActivityPage() {
       </Card>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Bought</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Bought</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight text-emerald-400">{formatMoney(summary.totalBoughtGbp, "GBP")}</p>
           <p className="mt-1 text-xs text-muted-foreground">{summary.buyCount} buy leg{summary.buyCount === 1 ? "" : "s"}</p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Sold</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Sold</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight text-red-400">{formatMoney(summary.totalSoldGbp, "GBP")}</p>
           <p className="mt-1 text-xs text-muted-foreground">{summary.sellCount} sell leg{summary.sellCount === 1 ? "" : "s"}</p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Realised P/L</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Realised P/L</p>
           <p className={`mt-2 text-2xl font-semibold tracking-tight ${summary.totalRealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {formatSignedMoney(summary.totalRealisedPlGbp)}
           </p>
@@ -555,8 +555,8 @@ export default function DashboardActivityPage() {
               : "Broker-reported P/L on closed sells in this range."}
           </p>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Activity</p>
+        <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Activity</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{periodActivity.length}</p>
           <p className="mt-1 text-xs text-muted-foreground">{rawActivity.length} total legs loaded</p>
         </div>
@@ -572,7 +572,7 @@ export default function DashboardActivityPage() {
       ) : null}
 
       {rawActivity.length === 0 ? (
-        <Card className="border-dashed border-white/12 bg-white/[0.02]">
+        <Card className="border-dashed border-border bg-muted/40">
           <CardHeader>
             <CardTitle>No trading activity loaded</CardTitle>
             <CardDescription>{noActivityReason}</CardDescription>
@@ -584,7 +584,7 @@ export default function DashboardActivityPage() {
           </CardContent>
         </Card>
       ) : periodActivity.length === 0 ? (
-        <Card className="border-dashed border-white/12 bg-white/[0.02]">
+        <Card className="border-dashed border-border bg-muted/40">
           <CardHeader>
             <CardTitle>No trades in this period</CardTitle>
             <CardDescription>{noActivityReason}</CardDescription>

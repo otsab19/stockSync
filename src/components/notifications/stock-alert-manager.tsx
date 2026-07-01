@@ -215,7 +215,7 @@ export function StockAlertManager() {
   }
 
   return (
-    <Card className="border-white/10 sm:col-span-2">
+    <Card className="border-border sm:col-span-2">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Stock move alerts</CardTitle>
       </CardHeader>
@@ -233,7 +233,7 @@ export function StockAlertManager() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search ticker or company"
-                className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 pr-4 pl-10 text-sm outline-none"
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 pr-4 pl-10 text-sm outline-none"
               />
             </div>
           </label>
@@ -243,7 +243,7 @@ export function StockAlertManager() {
             <select
               value={direction}
               onChange={(event) => setDirection(event.target.value as AlertDirection)}
-              className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none"
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none"
             >
               <option value="both">Up or down</option>
               <option value="up">Up only</option>
@@ -257,7 +257,7 @@ export function StockAlertManager() {
               value={threshold}
               onChange={(event) => setThreshold(event.target.value)}
               inputMode="decimal"
-              className="w-full rounded-2xl border border-white/10 bg-background/45 px-4 py-3 text-sm outline-none"
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none"
             />
           </label>
 
@@ -283,10 +283,10 @@ export function StockAlertManager() {
                 type="button"
                 onClick={() => setSelectedKey(key)}
                 disabled={!hasLiveQuote(position)}
-                className={`rounded-2xl border px-3 py-2 text-left text-sm transition-colors ${
+                className={`rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
                   selectedKey === key
                     ? "border-primary/50 bg-primary/10"
-                    : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                    : "border-border bg-muted/40 hover:bg-muted/40"
                 }`}
               >
                 <span className="block font-medium">{position.ticker}</span>
@@ -310,7 +310,7 @@ export function StockAlertManager() {
           ) : (
             <div className="space-y-2">
               {alerts.map((alert) => (
-                <div key={alert.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                <div key={alert.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3 py-2">
                   <div>
                     <p className="text-sm font-medium">{alert.ticker} · {directionLabels[alert.direction]} {alert.threshold_percent}%</p>
                     <p className="text-xs text-muted-foreground">

@@ -39,14 +39,14 @@ export function DesktopSidebar() {
 	const view = searchParams.get("view")
 
 	return (
-		<aside className="sticky top-0 hidden h-screen w-[17.5rem] shrink-0 border-r border-white/8 bg-sidebar/72 backdrop-blur md:flex md:flex-col xl:w-72">
-			<div className="flex h-full flex-col gap-6 px-4 py-5 xl:px-5">
-				<Link href="/dashboard" className="flex items-center gap-2.5 border-b border-white/8 pb-4">
-					<Image src="/icons/icon.svg" alt="StockSync" width={28} height={28} className="rounded-lg" />
-					<span className="text-lg font-bold tracking-tight">StockSync</span>
+		<aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-border bg-sidebar md:flex md:flex-col xl:w-64">
+			<div className="flex h-full flex-col px-3 py-4">
+				<Link href="/dashboard" className="flex items-center gap-2.5 px-2 pb-4 mb-1">
+					<Image src="/icons/icon.svg" alt="StockSync" width={26} height={26} className="rounded-md" />
+					<span className="text-base font-semibold tracking-tight text-sidebar-foreground">StockSync</span>
 				</Link>
 
-				<nav className="flex-1 space-y-1.5">
+				<nav className="flex-1 space-y-0.5">
 					{navigationItems.map((item) => {
 						const Icon = item.icon
 						const isActive = isNavigationItemActive(pathname, view, item.href)
@@ -56,21 +56,20 @@ export function DesktopSidebar() {
 								key={item.href}
 								href={item.href}
 								className={cn(
-									"flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-muted-foreground transition-all hover:bg-white/[0.04] hover:text-foreground",
-									isActive && "bg-white/[0.06] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+									"flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+									isActive
+										? "bg-accent text-accent-foreground"
+										: "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
 								)}
 							>
-								<span className={cn("flex size-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03]", isActive && "border-primary/30 bg-primary/10 text-primary")}>
-									<Icon className="size-4.5" />
-								</span>
+								<Icon className={cn("size-4 shrink-0", isActive ? "text-primary" : "")} />
 								<span>{item.label}</span>
 							</Link>
 						)
 					})}
 				</nav>
 
-				<div className="space-y-2 border-t border-white/8 pt-4">
-					<p className="px-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Theme</p>
+				<div className="border-t border-border pt-3 mt-2">
 					<ThemeToggle />
 				</div>
 			</div>
@@ -84,25 +83,25 @@ export function MobileHeader() {
 	const currentItem = getCurrentNavigationItem(pathname, searchParams.get("view"))
 
 	return (
-		<header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-white/8 bg-background/88 px-4 py-3 backdrop-blur md:hidden">
-			<div className="flex min-w-0 items-center gap-3">
+		<header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-background px-4 py-3 md:hidden">
+			<div className="flex min-w-0 items-center gap-2.5">
 				<Link href="/dashboard">
-					<Image src="/icons/icon.svg" alt="StockSync" width={24} height={24} className="rounded-md" />
+					<Image src="/icons/icon.svg" alt="StockSync" width={22} height={22} className="rounded-md" />
 				</Link>
-				<h2 className="truncate text-lg font-semibold tracking-tight">{currentItem.label}</h2>
+				<h2 className="truncate text-base font-semibold tracking-tight">{currentItem.label}</h2>
 			</div>
 			<Dialog>
-				<DialogTrigger render={<Button variant="outline" size="icon-sm" className="shrink-0 rounded-xl border-white/10 bg-white/[0.03]" />}>
+				<DialogTrigger render={<Button variant="outline" size="icon-sm" className="shrink-0" />}>
 					<Menu className="size-4" />
 					<span className="sr-only">Open menu</span>
 				</DialogTrigger>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Menu</DialogTitle>
-						<DialogDescription>More pages and display preferences.</DialogDescription>
+						<DialogDescription>Navigation and display preferences.</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4">
-						<nav className="grid gap-2">
+						<nav className="grid gap-1">
 							{mobileMoreItems.map((item) => {
 								const Icon = item.icon
 								const isActive = isNavigationItemActive(pathname, searchParams.get("view"), item.href)
@@ -112,18 +111,19 @@ export function MobileHeader() {
 										key={item.href}
 										href={item.href}
 										className={cn(
-											"flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-sm font-medium text-muted-foreground",
-											isActive && "text-foreground"
+											"flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+											isActive
+												? "bg-accent text-accent-foreground"
+												: "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
 										)}
 									>
-										<Icon className="size-4" />
+										<Icon className="size-4 shrink-0" />
 										{item.label}
 									</Link>
 								)
 							})}
 						</nav>
-						<div className="space-y-2">
-							<p className="text-xs font-medium text-muted-foreground">Theme</p>
+						<div className="border-t border-border pt-3">
 							<ThemeToggle />
 						</div>
 					</div>
@@ -139,8 +139,8 @@ export function MobileBottomNav() {
 	const view = searchParams.get("view")
 
 	return (
-		<nav className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 md:hidden">
-			<div className="mx-auto grid max-w-md grid-cols-4 gap-1 rounded-[1.75rem] border border-white/10 bg-background/88 p-2 shadow-[0_16px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+		<nav className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
+			<div className="grid grid-cols-4">
 				{mobilePrimaryItems.map((item) => {
 					const Icon = item.icon
 					const isActive = isNavigationItemActive(pathname, view, item.href)
@@ -150,13 +150,11 @@ export function MobileBottomNav() {
 							key={item.href}
 							href={item.href}
 							className={cn(
-								"flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[0.72rem] font-medium text-muted-foreground transition-all hover:bg-white/[0.05] hover:text-foreground",
-								isActive && "bg-white/[0.07] text-foreground"
+								"flex flex-col items-center justify-center gap-1 py-3 text-[0.7rem] font-medium transition-colors",
+								isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
 							)}
 						>
-							<span className={cn("flex size-8 items-center justify-center rounded-xl", isActive && "bg-primary/12 text-primary")}>
-								<Icon className="size-4" />
-							</span>
+							<Icon className="size-5" />
 							<span>{item.shortLabel}</span>
 						</Link>
 					)

@@ -60,7 +60,7 @@ function ThresholdRow({
   }
 
   return (
-    <div className="flex flex-wrap items-start gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-3">
+    <div className="flex flex-wrap items-start gap-3 rounded-xl border border-border bg-muted/40 px-3 py-3">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{label}</span>
         {isGlobal && <Badge variant="outline" className="text-[0.65rem]">Default</Badge>}
@@ -76,7 +76,7 @@ function ThresholdRow({
               step="1"
               value={tValue}
               onChange={(e) => setTValue(e.target.value)}
-              className="w-20 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-20 rounded-lg border border-border bg-muted/40 px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
           <div className="flex items-center gap-1.5">
@@ -87,7 +87,7 @@ function ThresholdRow({
               step="1"
               value={nValue}
               onChange={(e) => setNValue(e.target.value)}
-              className="w-20 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-20 rounded-lg border border-border bg-muted/40 px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
           {error && <p className="w-full text-xs text-destructive">{error}</p>}
@@ -102,7 +102,7 @@ function ThresholdRow({
             Alert at <span className="font-semibold text-foreground">£{thresholdGbp}</span>
             {" · "}near-alert at <span className="font-semibold text-foreground">£{nearWindowGbp}</span> before
           </span>
-          <Button size="sm" variant="outline" onClick={() => setEditing(true)} className="h-7 px-2.5 text-xs border-white/10">Edit</Button>
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)} className="h-7 px-2.5 text-xs border-border">Edit</Button>
           {onRemove && (
             <Button size="sm" variant="ghost" onClick={onRemove} className="h-7 w-7 p-0 text-destructive/70 hover:text-destructive">
               <Trash2 className="size-3.5" />
@@ -156,7 +156,7 @@ export function AlertThresholdSettings() {
   }
 
   return (
-    <Card className="border-white/10 sm:col-span-2">
+    <Card className="border-border sm:col-span-2">
       <CardHeader>
         <CardTitle className="text-base">Alert thresholds</CardTitle>
         <CardDescription>
@@ -196,9 +196,9 @@ export function AlertThresholdSettings() {
             value={newTicker}
             onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === "Enter" && handleAddTicker()}
-            className="w-36 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm uppercase focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-36 rounded-xl border border-border bg-muted/40 px-3 py-1.5 text-sm uppercase focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <Button size="sm" variant="outline" onClick={handleAddTicker} className="gap-1.5 border-white/10">
+          <Button size="sm" variant="outline" onClick={handleAddTicker} className="gap-1.5 border-border">
             <Plus className="size-3.5" />
             Add override
           </Button>

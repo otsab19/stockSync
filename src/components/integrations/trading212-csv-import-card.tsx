@@ -82,7 +82,7 @@ export function Trading212CsvImportCard() {
   }
 
   return (
-    <Card className="border-white/10">
+    <Card className="border-border">
       <CardHeader>
         <CardTitle>Trading 212 CSV import</CardTitle>
         <CardDescription>
@@ -102,7 +102,7 @@ export function Trading212CsvImportCard() {
         </div>
 
         {!isBrowserBackend ? (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-3">
+          <div className="rounded-xl border border-dashed border-border bg-muted/40 px-4 py-3">
             Switch `NEXT_PUBLIC_DATA_BACKEND` to `browser` to import Trading 212 CSV files locally.
           </div>
         ) : (
@@ -116,12 +116,12 @@ export function Trading212CsvImportCard() {
                   setSelectedFile(event.target.files?.[0] ?? null)
                   setImportState({ kind: "idle" })
                 }}
-                className="block w-full rounded-2xl border border-white/10 bg-background/45 px-3 py-3"
+                className="block w-full rounded-xl border border-border bg-background/45 px-3 py-3"
               />
             </label>
 
             {selectedFile ? (
-              <p className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+              <p className="rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs">
                 Ready to import: <span className="font-medium text-foreground">{selectedFile.name}</span>
               </p>
             ) : null}
@@ -137,7 +137,7 @@ export function Trading212CsvImportCard() {
                 <Upload className="size-4" />
                 {isImporting ? "Importing..." : "Import Trading 212 CSV"}
               </Button>
-              <Button variant="outline" onClick={handleReset} disabled={isImporting} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+              <Button variant="outline" onClick={handleReset} disabled={isImporting} className="gap-2 rounded-xl border-border bg-muted/40">
                 <RotateCcw className="size-4" />
                 Clear Trading 212 holdings
               </Button>

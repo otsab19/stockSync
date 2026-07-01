@@ -15,7 +15,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className={cn(
-      "grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1",
+      "grid grid-cols-3 gap-1 rounded-xl border border-border bg-muted/40 p-1",
       compact && "rounded-xl"
     )}>
       {themeOptions.map((option) => {
@@ -28,7 +28,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
             type="button"
             onClick={() => setTheme(option.value)}
             className={cn(
-              "flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground",
+              "flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground",
               isActive && "bg-primary/12 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
               compact && "px-2"
             )}

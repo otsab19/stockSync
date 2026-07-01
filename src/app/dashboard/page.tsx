@@ -92,30 +92,30 @@ function DashboardTodaySummary({
 }) {
   return (
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Bought today</p>
-        <p className="mt-2 text-xl font-semibold tracking-tight text-emerald-400">{formatMoney(summary.totalBoughtGbp, "GBP")}</p>
+      <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Bought today</p>
+        <p className="mt-2 text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatMoney(summary.totalBoughtGbp, "GBP")}</p>
         <p className="mt-1 text-xs text-muted-foreground">{summary.buyCount} buy leg{summary.buyCount === 1 ? "" : "s"}</p>
       </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Sold today</p>
-        <p className="mt-2 text-xl font-semibold tracking-tight text-red-400">{formatMoney(summary.totalSoldGbp, "GBP")}</p>
+      <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Sold today</p>
+        <p className="mt-2 text-xl font-semibold tabular-nums text-red-600 dark:text-red-400">{formatMoney(summary.totalSoldGbp, "GBP")}</p>
         <p className="mt-1 text-xs text-muted-foreground">{summary.sellCount} sell leg{summary.sellCount === 1 ? "" : "s"}</p>
       </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Realised P/L</p>
-        <p className={`mt-2 text-xl font-semibold tracking-tight ${summary.totalRealisedPlGbp >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+      <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Realised P/L</p>
+        <p className={`mt-2 text-xl font-semibold tabular-nums ${summary.totalRealisedPlGbp >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
           {formatSignedMoney(summary.totalRealisedPlGbp)}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">Closed sells today</p>
       </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Activity</p>
-        <p className="mt-2 text-xl font-semibold tracking-tight">{activityCount}</p>
+      <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Activity</p>
+        <p className="mt-2 text-xl font-semibold tabular-nums">{activityCount}</p>
         <p className="mt-1 text-xs text-muted-foreground">Trade legs today</p>
       </div>
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Biggest mover</p>
+      <div className="rounded-lg border border-border bg-card p-4 card-shadow">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Biggest mover</p>
         {biggestMovers[0] ? (
           <>
             <p className="mt-2 truncate text-xl font-semibold tracking-tight">{biggestMovers[0].ticker}</p>
@@ -238,13 +238,13 @@ function DashboardContent() {
         }
         actions={
           <>
-          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2 rounded-xl border-white/10 bg-white/[0.03]">
+          <Button variant="outline" size="sm" onClick={() => void fetchPortfolio({ refresh: true })} disabled={isRefreshing} className="gap-2">
             <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
             {isRefreshing ? "Syncing..." : "Sync now"}
           </Button>
           <Link
             href="/dashboard/history"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm transition-colors hover:bg-white/[0.06]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
           >
             <ChartCandlestick className="size-3.5" />
             History
@@ -254,7 +254,7 @@ function DashboardContent() {
       />
 
       {isLoading && !hasPositions ? (
-        <Card className="border-white/10 bg-white/[0.02]">
+        <Card>
           <CardHeader>
             <CardTitle>Loading portfolio</CardTitle>
             <CardDescription>Fetching holdings and activity from your connected brokers.</CardDescription>
@@ -277,18 +277,18 @@ function DashboardContent() {
               Try again
             </Button>
             {dashboardState === "unauthorized" ? (
-              <Link href="/settings" className="inline-flex h-8 items-center rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm transition-colors hover:bg-white/[0.06]">
+              <Link href="/settings" className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted">
                 Open settings
               </Link>
             ) : (
-              <Link href="/integrations" className="inline-flex h-8 items-center rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm transition-colors hover:bg-white/[0.06]">
+              <Link href="/integrations" className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted">
                 Open broker connections
               </Link>
             )}
           </CardContent>
         </Card>
       ) : isEmptyState ? (
-        <Card className="border-dashed border-white/12 bg-white/[0.02]">
+        <Card className="border-dashed">
           <CardHeader>
             <CardTitle>No holdings loaded</CardTitle>
             <CardDescription>Connect Trading 212 or eToro to populate the dashboard.</CardDescription>
