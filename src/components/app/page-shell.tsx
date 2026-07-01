@@ -26,22 +26,22 @@ export function PageShell({ children, className }: PageShellProps) {
 
 export function PageHeader({ eyebrow, title, description, badges, actions, className }: PageHeaderProps) {
   return (
-    <div className={cn("flex flex-col gap-1 pb-6 border-b border-border", className)}>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
+    <div className={cn("flex flex-col gap-4", className)}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
           {eyebrow ? (
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            <span className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
               {eyebrow}
-            </p>
+            </span>
           ) : null}
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h1>
+          <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{title}</h1>
           {description ? (
-            <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-1">{actions}</div> : null}
+        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      {badges ? <div className="mt-3 flex flex-wrap items-center gap-2">{badges}</div> : null}
+      {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
     </div>
   )
 }
