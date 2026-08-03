@@ -6,6 +6,7 @@ import { getConfiguredBackend } from "@/lib/backend/config"
 import { recordBrokerSync, type SupabaseWriter } from "@/lib/sync/record-broker-sync"
 import { createClient } from "@/utils/supabase/server"
 import type { BrowserApiSyncRequest, BrowserApiSyncResponse } from "@/types/integrations"
+import type { BrokerAccountSnapshot, BrokerSyncStats } from "@/types/broker-account"
 import type { BrokerId, PortfolioActivityEvent, PortfolioPosition } from "@/types/portfolio"
 
 function normalizeBrokerId(value: unknown): BrokerId | null {
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
 
     // Record to Supabase if in supabase mode
     if (getConfiguredBackend() === "supabase") {
-      recordSyncToSupabase(broker, portfolio, syncData.activity).catch(() => {})
+      recordSyncToSupabase(broker, syncData).catch(() => {})
     }
 
     return NextResponse.json<BrowserApiSyncResponse>({
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPosition[], activity?: PortfolioActivityEvent[]) {
+async function recordSyncToSupabase(broker: BrokerId, syncData: { positions: PortfolioPosition[]; activity?: PortfolioActivityEvent[]; accountSnapshot?: BrokerAccountSnapshot | null; syncStats?: BrokerSyncStats; message?: string }) {
   const supabase = await createClient()
   if (!supabase) return
 
@@ -112,7 +113,9 @@ async function recordSyncToSupabase(broker: BrokerId, positions: PortfolioPositi
   if (!user) return
 
   const writer = supabase as unknown as SupabaseWriter
-  await recordBrokerSync(writer, user.id, broker, positions, activity, {
+  await recordBrokerSync(writer, user.id, broker, syncData.positions, syncData.activity, {
+    accountSnapshot: syncData.accountSnapshot,
+    syncStats: syncData.syncStats,
     syncMode: "manual",
     trigger: "manual",
   })
