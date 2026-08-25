@@ -4,13 +4,15 @@ import Link from "next/link"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { TickerMiniChart } from "@/components/dashboard/ticker-mini-chart"
+import { WhatIfAverage } from "@/components/dashboard/what-if-average"
 import type { PortfolioPosition } from "@/types/portfolio"
 
 type PositionDetailPanelProps = {
   position: PortfolioPosition
+  siblingPositions?: PortfolioPosition[]
 }
 
-export function PositionDetailPanel({ position }: PositionDetailPanelProps) {
+export function PositionDetailPanel({ position, siblingPositions }: PositionDetailPanelProps) {
   const [confirmation, setConfirmation] = useState("")
   const [message, setMessage] = useState<string | null>(null)
   const [isClosing, setIsClosing] = useState(false)
@@ -64,6 +66,12 @@ export function PositionDetailPanel({ position }: PositionDetailPanelProps) {
             <p>Broker instrument: {position.brokerInstrumentId ?? "—"}</p>
           </div>
         </div>
+
+        <WhatIfAverage
+          positions={[position]}
+          combinedPositions={siblingPositions}
+          label="What-if: add money to this position"
+        />
 
         {position.broker === "etoro" && positionId && position.brokerInstrumentId ? (
           <div className="space-y-2 rounded-xl border border-border bg-muted/40 p-3">

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { CurrencyMode, PortfolioPosition } from "@/types/portfolio"
 import { formatMoney, getAlertBadgeVariant, getDisplayCurrency, getDisplayProfit, getDisplayValue } from "@/lib/dashboard/filter-engine"
+import { groupPositionsByTicker } from "@/lib/dashboard/averaging"
 import { PositionDetailPanel } from "@/components/dashboard/position-detail-panel"
 
 interface PortfolioTableProps {
@@ -42,6 +43,7 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
   const groups = useMemo(() => groupPositions(portfolio, groupBy), [portfolio, groupBy])
+  const tickerGroups = useMemo(() => groupPositionsByTicker(portfolio), [portfolio])
 
   function toggleGroup(key: string) {
     setCollapsedGroups(prev => {
@@ -172,7 +174,7 @@ export function PortfolioTable({ portfolio, currencyMode, emptyMessage, isLoadin
                                     exit={{ height: 0, opacity: 0 }}
                                     className="overflow-hidden"
                                   >
-                                    <PositionDetailPanel position={position} />
+                                    <PositionDetailPanel position={position} siblingPositions={tickerGroups.get(position.ticker)} />
                                   </motion.div>
                                 </AnimatePresence>
                               </TableCell>
