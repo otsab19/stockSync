@@ -50,6 +50,7 @@ function ProjectionRow({
 
 export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAverageProps) {
   const [amount, setAmount] = useState(0)
+  const [customPrice, setCustomPrice] = useState<string>("")
 
   const aggregate = useMemo(() => combineTickerLots(positions), [positions])
   const combinedAggregate = useMemo(
@@ -61,6 +62,8 @@ export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAve
     return null
   }
 
+  const buyPrice = customPrice === "" ? aggregate.livePrice : Number(customPrice)
+  const isCustomPrice = customPrice !== "" && Number(customPrice) !== aggregate.livePrice
   const currentValue = aggregate.totalShares * aggregate.livePrice
   const sliderMax = niceSliderMax(currentValue)
   const sliderStep = Math.max(sliderMax / 200, 1)
@@ -69,7 +72,7 @@ export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAve
     totalShares: aggregate.totalShares,
     avgPrice: aggregate.avgPrice,
     buyAmount: amount,
-    buyPrice: aggregate.livePrice,
+    buyPrice: buyPrice,
   })
 
   const fxToCombined = combinedAggregate && combinedAggregate.currency !== aggregate.currency
@@ -80,7 +83,7 @@ export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAve
         totalShares: combinedAggregate.totalShares,
         avgPrice: combinedAggregate.avgPrice,
         buyAmount: amount * fxToCombined,
-        buyPrice: aggregate.livePrice * fxToCombined,
+        buyPrice: buyPrice * fxToCombined,
       })
     : null
 
@@ -89,7 +92,7 @@ export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAve
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium text-foreground">{label ?? "What-if: add money"}</p>
         <p className="text-xs tabular-nums text-muted-foreground">
-          Buy at {formatMoney(aggregate.livePrice, aggregate.currency)}
+          Market: {formatMoney(aggregate.livePrice, aggregate.currency)}
         </p>
       </div>
 
@@ -118,6 +121,42 @@ export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAve
           className="w-24 rounded-lg border border-border bg-background px-2 py-1 text-right text-xs tabular-nums text-foreground outline-none focus:border-primary"
           aria-label="Amount to invest (manual entry)"
         />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <label className="shrink-0 text-xs text-muted-foreground">Buy price</label>
+        <div className="flex flex-1 items-center justify-end gap-1.5">
+          {isCustomPrice ? (
+            <button
+              type="button"
+              onClick={() => setCustomPrice("")}
+              className="rounded-md border border-border bg-background px-1.5 py-0.5 text-[0.65rem] text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              title="Reset to market price"
+            >
+              ↺ market
+            </button>
+          ) : (
+            <span className="rounded-md border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[0.65rem] text-primary">
+              market
+            </span>
+          )}
+          <input
+            type="number"
+            step="0.01"
+            min={0.0001}
+            value={customPrice}
+            placeholder={aggregate.livePrice.toFixed(2)}
+            onChange={(e) => setCustomPrice(e.target.value)}
+            onBlur={() => {
+              const n = Number(customPrice)
+              if (!Number.isFinite(n) || n <= 0) setCustomPrice("")
+            }}
+            className={`w-28 rounded-lg border bg-background px-2 py-1 text-right text-xs tabular-nums text-foreground outline-none transition-colors focus:border-primary ${
+              isCustomPrice ? "border-primary/50" : "border-border"
+            }`}
+            aria-label="Buy price"
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -149,7 +188,7 @@ export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAve
       {projection ? (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-muted-foreground">Adding {formatMoney(amount, aggregate.currency)}</span>
+            <span className="text-muted-foreground">Adding {formatMoney(amount, aggregate.currency)} at {formatMoney(buyPrice, aggregate.currency)}</span>
             <span className="tabular-nums text-muted-foreground">
               +{projection.newShares.toFixed(4)} sh · {projection.newTotalShares.toFixed(4)} sh total
             </span>
