@@ -5,6 +5,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { TickerMiniChart } from "@/components/dashboard/ticker-mini-chart"
 import { WhatIfAverage } from "@/components/dashboard/what-if-average"
+import { WhatIfSell } from "@/components/dashboard/what-if-sell"
 import type { PortfolioPosition } from "@/types/portfolio"
 
 type PositionDetailPanelProps = {
@@ -71,6 +72,12 @@ export function PositionDetailPanel({ position, siblingPositions }: PositionDeta
           positions={[position]}
           combinedPositions={siblingPositions}
           label="What-if: add money to this position"
+        />
+
+        <WhatIfSell
+          positions={[position]}
+          combinedPositions={siblingPositions}
+          label="What-if: sell at price"
         />
 
         {position.broker === "etoro" && positionId && position.brokerInstrumentId ? (

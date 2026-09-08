@@ -93,16 +93,32 @@ export function WhatIfAverage({ positions, combinedPositions, label }: WhatIfAve
         </p>
       </div>
 
-      <input
-        type="range"
-        min={0}
-        max={sliderMax}
-        step={sliderStep}
-        value={amount}
-        onChange={(event) => setAmount(Number(event.target.value))}
-        className="w-full accent-primary"
-        aria-label="Amount to invest"
-      />
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          min={0}
+          max={sliderMax}
+          step={sliderStep}
+          value={amount}
+          onChange={(event) => setAmount(Number(event.target.value))}
+          className="flex-1 accent-primary"
+          aria-label="Amount to invest"
+        />
+        <input
+          type="number"
+          min={0}
+          max={sliderMax}
+          step={sliderStep}
+          value={amount === 0 ? "" : amount}
+          placeholder="0"
+          onChange={(event) => {
+            const val = Number(event.target.value)
+            setAmount(Number.isFinite(val) && val >= 0 ? Math.min(val, sliderMax) : 0)
+          }}
+          className="w-24 rounded-lg border border-border bg-background px-2 py-1 text-right text-xs tabular-nums text-foreground outline-none focus:border-primary"
+          aria-label="Amount to invest (manual entry)"
+        />
+      </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
         {PRESET_AMOUNTS.map((preset) => (
